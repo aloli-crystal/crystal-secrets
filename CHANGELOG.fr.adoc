@@ -3,6 +3,18 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.2.1 — 2026-04-28
+
+Suivi du renommage de fichier dans
+`aloli-crystal/crystal-diceware` v0.1.3 : l'entrée est passée de
+`src/crystal_diceware.cr` à `src/diceware.cr` (pour correspondre
+au nom du module `Diceware`), donc le chemin de require a changé.
+
+* `require "crystal-diceware/crystal_diceware"`
+  → `require "crystal-diceware/diceware"`
+* `shard.yml` : `crystal-diceware ~> 0.1` résout en v0.1.3.
+* Aucun changement de comportement.
+
 == v0.2.0 — 2026-04-28
 
 Branchement des shards officiels `aloli-crystal/crystal-toml` v0.1

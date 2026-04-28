@@ -1,5 +1,5 @@
 name: crystal-secrets
-version: 0.2.0
+version: 0.2.1
 description: |
   Secrets management for the Aloli Crystal ecosystem: a TOML vault
   encrypted with age, a master key stored in the macOS Keychain

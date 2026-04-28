@@ -1,8 +1,5 @@
 require "crystal-toml"
-# crystal-diceware ships its entry as `crystal_diceware.cr` (snake)
-# while the shard name uses dashes — bypass the default lookup with
-# the explicit subpath form.
-require "crystal-diceware/crystal_diceware"
+require "crystal-diceware/diceware"
 
 require "./crystal_secrets/version"
 require "./crystal_secrets/error"
