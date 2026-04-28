@@ -4,7 +4,11 @@ shards:
     git: https://github.com/crystal-ameba/ameba.git
     version: 1.6.4
 
-  toml:
-    git: https://github.com/crystal-community/toml.cr.git
-    version: 0.8.1
+  crystal-diceware:
+    git: https://github.com/aloli-crystal/crystal-diceware.git
+    version: 0.1.2
+
+  crystal-toml:
+    git: https://github.com/aloli-crystal/crystal-toml.git
+    version: 0.1.0
 

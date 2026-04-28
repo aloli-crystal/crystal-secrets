@@ -68,7 +68,7 @@ module CrystalSecrets::CLI
 
     keypair = CrystalSecrets::MasterKey.generate!(force: force)
 
-    suggested = CrystalSecrets::Diceware.generate(words: words, language: language)
+    suggested = ::Diceware.generate(words: words, language: language)
     puts ""
     puts "Generated Diceware passphrase (#{words} words):"
     puts ""
@@ -82,7 +82,7 @@ module CrystalSecrets::CLI
                    suggested
                  when "r"
                    loop do
-                     try = CrystalSecrets::Diceware.generate(words: words, language: language)
+                     try = ::Diceware.generate(words: words, language: language)
                      puts "    #{try}"
                      print "Accept? [O/r/n] "
                      a = STDIN.gets.try(&.strip.downcase) || ""
@@ -166,9 +166,7 @@ module CrystalSecrets::CLI
     end
 
     keypair = CrystalSecrets::MasterKey.read
-    empty_doc = CrystalSecrets::TomlCodec::Doc.new
-    initial = "# vault: #{name} (created #{Time.utc.to_s("%Y-%m-%d")})\n\n"
-    initial += CrystalSecrets::TomlCodec.serialize(empty_doc)
+    initial = "# vault: #{name} (created #{Time.utc.to_s("%Y-%m-%d")})\n"
     ciphertext = CrystalSecrets::Vault.encrypt(initial, keypair.recipient)
     File.write(path, ciphertext)
     File.chmod(path, 0o600)
@@ -189,7 +187,7 @@ module CrystalSecrets::CLI
     return 64 if vault_name.empty? || key.empty?
 
     doc = read_vault(vault_name, vault_dir)
-    if value = lookup_key(doc, key)
+    if value = doc.string?(key)
       puts value
       return 0
     end
@@ -217,7 +215,7 @@ module CrystalSecrets::CLI
     end
 
     doc = read_vault(vault_name, vault_dir)
-    set_key(doc, key, value)
+    doc.set(key, value)
     write_vault(vault_name, vault_dir, doc)
 
     puts "set #{key} in #{vault_name}"
@@ -251,12 +249,12 @@ module CrystalSecrets::CLI
     end
 
     doc = read_vault(vault_name, vault_dir)
-    doc.each do |key, value|
+    doc.to_h.each do |key, value|
       case value
-      when String
-        puts key
       when Hash
         value.each_key { |sub| puts "#{key}.#{sub}" }
+      else
+        puts key
       end
     end
     0
@@ -344,46 +342,22 @@ module CrystalSecrets::CLI
     {vault_name, key, vault_dir}
   end
 
-  private def read_vault(name : String, vault_dir : String) : CrystalSecrets::TomlCodec::Doc
+  private def read_vault(name : String, vault_dir : String) : ::TOML::Document
     path = File.join(vault_dir, "#{name}.toml.age")
     raise "vault not found: #{path}. Did you run `crystal-secrets vault create`?" unless File.exists?(path)
     keypair = CrystalSecrets::MasterKey.read
     ciphertext = File.read(path)
     plaintext = CrystalSecrets::Vault.decrypt(ciphertext, keypair.identity)
-    CrystalSecrets::TomlCodec.parse(plaintext)
+    ::TOML.parse(plaintext)
   end
 
-  private def write_vault(name : String, vault_dir : String, doc : CrystalSecrets::TomlCodec::Doc) : Nil
+  private def write_vault(name : String, vault_dir : String, doc : ::TOML::Document) : Nil
     path = File.join(vault_dir, "#{name}.toml.age")
     keypair = CrystalSecrets::MasterKey.read
-    plaintext = CrystalSecrets::TomlCodec.serialize(doc)
+    plaintext = doc.to_toml
     ciphertext = CrystalSecrets::Vault.encrypt(plaintext, keypair.recipient)
     File.write(path, ciphertext)
     File.chmod(path, 0o600)
-  end
-
-  private def lookup_key(doc : CrystalSecrets::TomlCodec::Doc, key : String) : String?
-    if key.includes?('.')
-      section, sub = key.split('.', 2)
-      sec_value = doc[section]?
-      return nil unless sec_value.is_a?(Hash)
-      sec_value[sub]?
-    else
-      v = doc[key]?
-      v.is_a?(String) ? v : nil
-    end
-  end
-
-  private def set_key(doc : CrystalSecrets::TomlCodec::Doc, key : String, value : String) : Nil
-    if key.includes?('.')
-      section, sub = key.split('.', 2)
-      existing = doc[section]?
-      sub_hash = existing.is_a?(Hash) ? existing.dup : ({} of String => String)
-      sub_hash[sub] = value
-      doc[section] = sub_hash
-    else
-      doc[key] = value
-    end
   end
 
   private def read_secret_from_stdin : String?

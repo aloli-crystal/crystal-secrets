@@ -12,28 +12,29 @@ recovery code as last-resort.
 
 French version: link:README.fr.adoc[README.fr.adoc].
 
-== Status: v0.1 (early, single-user macOS only)
+== Status: v0.2 (single-user macOS, comment-preserving vault)
 
 This shard is the foundation of the Aloli secret-management story
-described in `prod-crystal/CRYSTAL-SECRETS-SPECS.adoc`. v0.1 covers
-the operator's everyday loop on a Mac:
+described in `prod-crystal/CRYSTAL-SECRETS-SPECS.adoc`. The current
+release covers the operator's everyday loop on a Mac:
 
-* `init` generates an `age` keypair, proposes a Diceware passphrase,
-  prints the public key + a paper recovery code.
-* `vault create / get / set / list` for everyday secret access.
+* `init` generates an `age` keypair, proposes a Diceware passphrase
+  via `aloli-crystal/crystal-diceware`, prints the public key + a
+  paper recovery code.
+* `vault create / get / set / list` for everyday secret access,
+  built on `aloli-crystal/crystal-toml`'s `TOML::Document` —
+  comments and formatting survive programmatic edits.
 * `master-key export / import` for the paper recovery flow.
 
-Out of v0.1 scope (planned for v0.2+):
+Out of scope (planned for later):
 
-* **Multi-recipient** vaults (team sharing). v0.1 = single recipient
-  (the operator's own key).
+* **Multi-recipient** vaults (team sharing). Single recipient only
+  for now (the operator's own key).
 * **SSH agent** mode (the `ssh-keys.age` vault + the in-memory
   agent serving the SSH protocol).
 * **Other OS backends** (Linux Secret Service, Windows Credential
-  Manager, FreeBSD file+passphrase). v0.1 = macOS Keychain only.
+  Manager, FreeBSD file+passphrase). macOS Keychain only.
 * **Rotation, delete, edit, diff/log** subcommands.
-* Migration to **`crystal-toml`** and **`crystal-diceware`** when
-  those shards are published. v0.1 ships them inline.
 
 == Architecture
 
@@ -51,12 +52,12 @@ Out of v0.1 scope (planned for v0.2+):
                   │  Vault ──────── age ◄────────────────┼─── /usr/local/bin/age
                   │   │              (shell-out)         │
                   │   ▼                                  │
-                  │  TomlCodec ─── crystal-community/    │
-                  │                TOML.cr (parser)      │
-                  │                + custom serializer   │
+                  │  TOML::Document ◄─── aloli-crystal/  │
+                  │  (rich AST,          crystal-toml    │
+                  │   comments preserved)                │
                   │                                      │
-                  │  Diceware (local) ─── eff_long       │
-                  │                       fr_mbelivo_5d  │
+                  │  Diceware     ◄─── aloli-crystal/    │
+                  │                    crystal-diceware  │
                   │                                      │
                   │  Recovery ──── openssl enc ◄─────────┼─── /usr/bin/openssl
                   │                (passphrase)          │
@@ -162,10 +163,10 @@ crystal tool format --check
 bin/ameba
 ----
 
-50 tests cover Diceware (vectors EFF + mbelivo, randomness,
-manual/hybrid modes), Keychain shell-out (no key in argv),
-Vault round-trip (real `age`), TomlCodec parse/serialize,
-Recovery export/import.
+19 tests cover Keychain shell-out (no key in argv, 8 cases),
+Vault round-trip (real `age`, 6 cases), Recovery export/import
+(5 cases). Diceware and TOML behavior is exercised by their
+own test suites in the upstream shards.
 
 == License
 
@@ -174,9 +175,8 @@ MIT — see link:LICENSE[LICENSE].
 == References
 
 * https://age-encryption.org/v1[age v1 specification]
-* https://github.com/crystal-community/TOML.cr[TOML.cr] — parser
+* https://github.com/aloli-crystal/crystal-toml[crystal-toml] — TOML v1.0 parser/serializer with comment preservation
+* https://github.com/aloli-crystal/crystal-diceware[crystal-diceware] — Diceware passphrase generator
 * https://www.eff.org/dice[EFF Diceware Wordlist]
 * https://github.com/mbelivo/diceware-wordlists-fr[mbelivo French wordlist]
 * `prod-crystal/CRYSTAL-SECRETS-SPECS.adoc` — parent spec
-* `prod-crystal/CRYSTAL-DICEWARE-SPECS.adoc` — future standalone Diceware shard
-* `prod-crystal/CRYSTAL-TOML-SPECS.adoc` — future TOML shard with comment preservation

@@ -3,6 +3,32 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.2.0 — 2026-04-28
+
+Wires up the official `aloli-crystal/crystal-toml` v0.1 and
+`aloli-crystal/crystal-diceware` v0.1 shards. The local v0.1
+implementations are removed from this repo and replaced by the
+upstream dependencies.
+
+* **`CrystalSecrets::Diceware` removed** — replaced by the
+  top-level `Diceware` module from `aloli-crystal/crystal-diceware`.
+  Same wordlist identifiers (`:eff_long`, `:fr_mbelivo_5d`), same
+  `:auto`, `:manual`, `:hybrid` modes. Embedded wordlist files are
+  no longer in this repo.
+* **`CrystalSecrets::TomlCodec` removed** — replaced by the
+  `TOML::Document` class from `aloli-crystal/crystal-toml`. The
+  vault now benefits from **byte-identical round-trip** and
+  **comment preservation** : a manual annotation
+  `API_KEY = "..." # rotated 2026-04-28` survives a programmatic
+  `crystal-secrets set` of another key. The `set_with_comment`
+  method is also exposed via the API for future commands.
+* **CLI**: `get`, `set`, `list` now operate on `TOML::Document`
+  directly via `doc.string?`, `doc.set`, `doc.to_h`. The
+  `lookup_key` / `set_key` helpers in CLI are gone — TOML.cr's
+  dotted-path lookups (`"stripe.secret_key"`) handle that.
+* No breaking change for end users: existing `*.toml.age` vaults
+  keep parsing as before.
+
 == v0.1.0 — 2026-04-28
 
 Initial release. macOS-only, single-user, single-recipient.
