@@ -1,0 +1,182 @@
+= crystal-secrets
+:toc: left
+:toclevels: 2
+:source-highlighter: rouge
+
+image:https://github.com/aloli-crystal/crystal-secrets/actions/workflows/ci.yml/badge.svg[CI,link=https://github.com/aloli-crystal/crystal-secrets/actions/workflows/ci.yml]
+
+Secrets management for the Aloli Crystal ecosystem: a TOML vault
+encrypted with `age`, a master key stored in the macOS Keychain
+(synced across Macs through iCloud), a Diceware-protected paper
+recovery code as last-resort.
+
+French version: link:README.fr.adoc[README.fr.adoc].
+
+== Status: v0.1 (early, single-user macOS only)
+
+This shard is the foundation of the Aloli secret-management story
+described in `prod-crystal/CRYSTAL-SECRETS-SPECS.adoc`. v0.1 covers
+the operator's everyday loop on a Mac:
+
+* `init` generates an `age` keypair, proposes a Diceware passphrase,
+  prints the public key + a paper recovery code.
+* `vault create / get / set / list` for everyday secret access.
+* `master-key export / import` for the paper recovery flow.
+
+Out of v0.1 scope (planned for v0.2+):
+
+* **Multi-recipient** vaults (team sharing). v0.1 = single recipient
+  (the operator's own key).
+* **SSH agent** mode (the `ssh-keys.age` vault + the in-memory
+  agent serving the SSH protocol).
+* **Other OS backends** (Linux Secret Service, Windows Credential
+  Manager, FreeBSD file+passphrase). v0.1 = macOS Keychain only.
+* **Rotation, delete, edit, diff/log** subcommands.
+* Migration to **`crystal-toml`** and **`crystal-diceware`** when
+  those shards are published. v0.1 ships them inline.
+
+== Architecture
+
+[source]
+----
+                  ┌──────────────────────────────────────┐
+                  │            crystal-secrets           │
+                  │                                      │
+                  │  CLI                                 │
+                  │   │                                  │
+                  │   ▼                                  │
+                  │  MasterKey ─── KeychainMacOS ◄───────┼─── /usr/bin/security
+                  │   │              (shell-out)         │
+                  │   ▼                                  │
+                  │  Vault ──────── age ◄────────────────┼─── /usr/local/bin/age
+                  │   │              (shell-out)         │
+                  │   ▼                                  │
+                  │  TomlCodec ─── crystal-community/    │
+                  │                TOML.cr (parser)      │
+                  │                + custom serializer   │
+                  │                                      │
+                  │  Diceware (local) ─── eff_long       │
+                  │                       fr_mbelivo_5d  │
+                  │                                      │
+                  │  Recovery ──── openssl enc ◄─────────┼─── /usr/bin/openssl
+                  │                (passphrase)          │
+                  │                                      │
+                  └──────────────────────────────────────┘
+----
+
+== Installation
+
+[source,shell]
+----
+brew install age              # required runtime dependency
+shards install
+crystal build src/cli.cr -o crystal-secrets --release
+sudo install -m 0755 crystal-secrets /usr/local/bin/
+----
+
+== Quickstart
+
+[source,shell]
+----
+$ crystal-secrets init
+Generated Diceware passphrase (7 words):
+
+    perplex grouchy abdomen catacomb mournful prancing slingshot
+
+Accept this passphrase? [O/r/n] o
+
+══════════════════════════════════════════════════════════
+  PUBLIC KEY (add this to your team recipients.txt) :
+
+    age1abc123...
+
+══════════════════════════════════════════════════════════
+  PAPER RECOVERY CODE — print this and store in a physical
+  safe. NEVER photograph, NEVER scan.
+══════════════════════════════════════════════════════════
+
+  Passphrase :
+      perplex grouchy abdomen catacomb mournful prancing slingshot
+
+-----BEGIN CRYSTAL-SECRETS RECOVERY-----
+U2FsdGVkX1+abc...
+-----END CRYSTAL-SECRETS RECOVERY-----
+
+$ crystal-secrets vault create -n prod
+vault created: ~/.config/crystal-secrets/vaults/prod.toml.age
+
+$ crystal-secrets set -n prod -k DATABASE_URL
+Value (hidden): ●●●●●●●●●●●●
+set DATABASE_URL in prod
+
+$ crystal-secrets get prod DATABASE_URL
+postgres://aloli:secret@db/prod
+
+$ crystal-secrets list prod
+DATABASE_URL
+----
+
+== Recovery (after losing the Mac)
+
+[source,shell]
+----
+# On the new Mac, after iCloud restore is NOT available:
+$ crystal-secrets master-key import
+Paste the recovery paper, then Ctrl-D :
+-----BEGIN CRYSTAL-SECRETS RECOVERY-----
+U2FsdGVkX1+abc...
+-----END CRYSTAL-SECRETS RECOVERY-----
+^D
+Passphrase (hidden): ●●●●●●●●●●●
+master key restored. Public key:
+    age1abc123...
+----
+
+In practice, **iCloud Keychain** does this automatically — the
+master key follows you to the new Mac without any retyping. The
+paper is the last-resort filet de sécurité, used only if iCloud
+itself is unavailable.
+
+== Key handling discipline
+
+* The master key is **never** passed via command-line arguments
+  (would leak through `ps`).
+* Secret values are **never** passed via argv either; `set` reads
+  the value from stdin (hidden when STDIN is a terminal).
+* The age private key is fed to `age(1)` via a temp file with mode
+  `0600`, deleted as soon as `age` returns.
+* On disk, the vault is `<env>.toml.age` (TOML payload encrypted
+  with age). The master key never touches the disk except in the
+  Keychain blob (managed by macOS).
+* Recovery paper = openssl-encrypted blob; the passphrase is the
+  only protection of the paper. Store both in the same physical
+  safe to avoid splitting the recovery into two failures.
+
+== Development
+
+[source,shell]
+----
+shards install
+crystal spec
+crystal tool format --check
+bin/ameba
+----
+
+50 tests cover Diceware (vectors EFF + mbelivo, randomness,
+manual/hybrid modes), Keychain shell-out (no key in argv),
+Vault round-trip (real `age`), TomlCodec parse/serialize,
+Recovery export/import.
+
+== License
+
+MIT — see link:LICENSE[LICENSE].
+
+== References
+
+* https://age-encryption.org/v1[age v1 specification]
+* https://github.com/crystal-community/TOML.cr[TOML.cr] — parser
+* https://www.eff.org/dice[EFF Diceware Wordlist]
+* https://github.com/mbelivo/diceware-wordlists-fr[mbelivo French wordlist]
+* `prod-crystal/CRYSTAL-SECRETS-SPECS.adoc` — parent spec
+* `prod-crystal/CRYSTAL-DICEWARE-SPECS.adoc` — future standalone Diceware shard
+* `prod-crystal/CRYSTAL-TOML-SPECS.adoc` — future TOML shard with comment preservation

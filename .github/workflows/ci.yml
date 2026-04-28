@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [production]
+  pull_request:
+    branches: [production]
+
+jobs:
+  test:
+    # macOS only for v0.1: Keychain shell-out is macOS-specific. Other
+    # OS backends (Linux Secret Service, Windows Credential Manager,
+    # FreeBSD file+passphrase) arrive in v0.2+.
+    runs-on: macos-latest
+
+    strategy:
+      matrix:
+        crystal: ["1.19.0", "latest"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: ${{ matrix.crystal }}
+
+      - name: Install age (for vault encrypt/decrypt)
+        run: brew install age
+
+      - name: Install dependencies
+        run: shards install
+
+      - name: Check formatting
+        run: crystal tool format --check
+
+      - name: Run tests
+        run: crystal spec
+
+      - name: Run linter
+        run: bin/ameba
+
+      - name: Build CLI
+        run: crystal build src/cli.cr -o crystal-secrets --release

@@ -1,0 +1,38 @@
+= Changelog
+:toc: left
+:toc-title: Versions
+:toclevels: 2
+
+== v0.1.0 — 2026-04-28
+
+Initial release. macOS-only, single-user, single-recipient.
+
+* **Diceware** module (local) — generates passphrases from two
+  embedded wordlists : EFF Large (English, 7776 words) and
+  mbelivo 5d (French, 7776 words). Three sourcing modes :
+  `:auto` (`Random::Secure`), `:manual` (caller supplies dice
+  rolls), `:hybrid`. Will be replaced by `aloli-crystal/crystal-diceware`
+  when published.
+* **KeychainMacOS** — shell-out to `/usr/bin/security` for
+  `add-generic-password`, `find-generic-password`,
+  `delete-generic-password`. Secret values fed via stdin, never
+  argv.
+* **Vault** — shell-out to `age(1)` for single-recipient
+  encrypt/decrypt (ASCII-armored). `openssl enc` (PBKDF2 600 000
+  iterations, AES-256-CBC, SHA-256) for the passphrase recovery
+  paper, because `age -p` requires an interactive terminal.
+* **TomlCodec** — parses via `crystal-community/TOML.cr`, custom
+  serializer that emits `KEY = "value"` lines and `[section]`
+  blocks. Multi-line values via `'''…'''` literals. Comment
+  preservation will land with `aloli-crystal/crystal-toml`.
+* **MasterKey** — wraps `age-keygen` to produce the operator's
+  age keypair, store the private key in Keychain, recover the
+  public key with `age-keygen -y`.
+* **Recovery** — `export(identity, passphrase) -> paper` and
+  `import(paper, passphrase) -> identity` for the disaster
+  scenario where iCloud Keychain itself is unavailable.
+* **CLI** — `init`, `vault create`, `get`, `set`, `list`,
+  `master-key export/import`, `version`. All long flags have
+  short equivalents per Aloli convention.
+* **50 tests** (Diceware 23, Keychain 8, Vault 6, TomlCodec 8,
+  Recovery 5).
