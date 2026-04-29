@@ -1,5 +1,5 @@
 name: secrets
-version: 0.2.3
+version: 0.2.4
 description: |
   Secrets management for the Aloli Crystal ecosystem: a TOML vault
   encrypted with age, a master key stored in the macOS Keychain
@@ -19,10 +19,10 @@ targets:
 dependencies:
   toml:
     github: aloli-crystal/toml
-    version: ~> 0.1
+    version: "~> 0.1.1"
   diceware:
     github: aloli-crystal/diceware
-    version: ~> 0.1
+    version: "~> 0.1.4"
 
 development_dependencies:
   ameba:
