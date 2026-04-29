@@ -1,11 +1,11 @@
-name: crystal-secrets
-version: 0.2.1
+name: secrets
+version: 0.2.2
 description: |
   Secrets management for the Aloli Crystal ecosystem: a TOML vault
   encrypted with age, a master key stored in the macOS Keychain
   (synced through iCloud), and a Diceware-protected paper recovery
-  code. v0.2 wires up the official aloli-crystal/crystal-toml and
-  aloli-crystal/crystal-diceware shards (v0.1.x), gaining comment
+  code. v0.2 wires up the official aloli-crystal/toml and
+  aloli-crystal/diceware shards (v0.1.x), gaining comment
   preservation in vaults and a maintained Diceware backend.
 authors:
   - Philippe Nénert <philippe@aloli.fr>
@@ -13,15 +13,15 @@ license: MIT
 crystal: ">= 1.19.0"
 
 targets:
-  crystal-secrets:
+  secrets:
     main: src/cli.cr
 
 dependencies:
-  crystal-toml:
-    github: aloli-crystal/crystal-toml
+  toml:
+    github: aloli-crystal/toml
     version: ~> 0.1
-  crystal-diceware:
-    github: aloli-crystal/crystal-diceware
+  diceware:
+    github: aloli-crystal/diceware
     version: ~> 0.1
 
 development_dependencies:

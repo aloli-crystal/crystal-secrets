@@ -1,9 +1,9 @@
-= crystal-secrets
+= secrets
 :toc: left
 :toclevels: 2
 :source-highlighter: rouge
 
-image:https://github.com/aloli-crystal/crystal-secrets/actions/workflows/ci.yml/badge.svg[CI,link=https://github.com/aloli-crystal/crystal-secrets/actions/workflows/ci.yml]
+image:https://github.com/aloli-crystal/secrets/actions/workflows/ci.yml/badge.svg[CI,link=https://github.com/aloli-crystal/secrets/actions/workflows/ci.yml]
 
 Secrets management for the Aloli Crystal ecosystem: a TOML vault
 encrypted with `age`, a master key stored in the macOS Keychain
@@ -19,10 +19,10 @@ described in `prod-crystal/CRYSTAL-SECRETS-SPECS.adoc`. The current
 release covers the operator's everyday loop on a Mac:
 
 * `init` generates an `age` keypair, proposes a Diceware passphrase
-  via `aloli-crystal/crystal-diceware`, prints the public key + a
+  via `aloli-crystal/diceware`, prints the public key + a
   paper recovery code.
 * `vault create / get / set / list` for everyday secret access,
-  built on `aloli-crystal/crystal-toml`'s `TOML::Document` —
+  built on `aloli-crystal/toml`'s `TOML::Document` —
   comments and formatting survive programmatic edits.
 * `master-key export / import` for the paper recovery flow.
 
@@ -41,7 +41,7 @@ Out of scope (planned for later):
 [source]
 ----
                   ┌──────────────────────────────────────┐
-                  │            crystal-secrets           │
+                  │            secrets           │
                   │                                      │
                   │  CLI                                 │
                   │   │                                  │
@@ -53,11 +53,11 @@ Out of scope (planned for later):
                   │   │              (shell-out)         │
                   │   ▼                                  │
                   │  TOML::Document ◄─── aloli-crystal/  │
-                  │  (rich AST,          crystal-toml    │
+                  │  (rich AST,          toml            │
                   │   comments preserved)                │
                   │                                      │
                   │  Diceware     ◄─── aloli-crystal/    │
-                  │                    crystal-diceware  │
+                  │                    diceware          │
                   │                                      │
                   │  Recovery ──── openssl enc ◄─────────┼─── /usr/bin/openssl
                   │                (passphrase)          │
@@ -71,15 +71,15 @@ Out of scope (planned for later):
 ----
 brew install age              # required runtime dependency
 shards install
-crystal build src/cli.cr -o crystal-secrets --release
-sudo install -m 0755 crystal-secrets /usr/local/bin/
+crystal build src/cli.cr -o secrets --release
+sudo install -m 0755 secrets /usr/local/bin/
 ----
 
 == Quickstart
 
 [source,shell]
 ----
-$ crystal-secrets init
+$ secrets init
 Generated Diceware passphrase (7 words):
 
     perplex grouchy abdomen catacomb mournful prancing slingshot
@@ -103,17 +103,17 @@ Accept this passphrase? [O/r/n] o
 U2FsdGVkX1+abc...
 -----END CRYSTAL-SECRETS RECOVERY-----
 
-$ crystal-secrets vault create -n prod
-vault created: ~/.config/crystal-secrets/vaults/prod.toml.age
+$ secrets vault create -n prod
+vault created: ~/.config/secrets/vaults/prod.toml.age
 
-$ crystal-secrets set -n prod -k DATABASE_URL
+$ secrets set -n prod -k DATABASE_URL
 Value (hidden): ●●●●●●●●●●●●
 set DATABASE_URL in prod
 
-$ crystal-secrets get prod DATABASE_URL
+$ secrets get prod DATABASE_URL
 postgres://aloli:secret@db/prod
 
-$ crystal-secrets list prod
+$ secrets list prod
 DATABASE_URL
 ----
 
@@ -122,7 +122,7 @@ DATABASE_URL
 [source,shell]
 ----
 # On the new Mac, after iCloud restore is NOT available:
-$ crystal-secrets master-key import
+$ secrets master-key import
 Paste the recovery paper, then Ctrl-D :
 -----BEGIN CRYSTAL-SECRETS RECOVERY-----
 U2FsdGVkX1+abc...
@@ -175,8 +175,8 @@ MIT — see link:LICENSE[LICENSE].
 == References
 
 * https://age-encryption.org/v1[age v1 specification]
-* https://github.com/aloli-crystal/crystal-toml[crystal-toml] — TOML v1.0 parser/serializer with comment preservation
-* https://github.com/aloli-crystal/crystal-diceware[crystal-diceware] — Diceware passphrase generator
+* https://github.com/aloli-crystal/toml[toml] — TOML v1.0 parser/serializer with comment preservation
+* https://github.com/aloli-crystal/diceware[diceware] — Diceware passphrase generator
 * https://www.eff.org/dice[EFF Diceware Wordlist]
 * https://github.com/mbelivo/diceware-wordlists-fr[mbelivo French wordlist]
 * `prod-crystal/CRYSTAL-SECRETS-SPECS.adoc` — parent spec

@@ -1,5 +1,5 @@
-require "crystal-toml"
-require "crystal-diceware/diceware"
+require "toml"
+require "diceware"
 
 require "./crystal_secrets/version"
 require "./crystal_secrets/error"

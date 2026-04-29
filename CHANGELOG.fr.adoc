@@ -3,33 +3,52 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.2.2 — 2026-04-29
+
+=== Modifié
+
+* **Repo GitHub renommé** vers `aloli-crystal/secrets` (convention de
+  nommage Aloli : les créations originales abandonnent le préfixe
+  `crystal-`). Les anciens liens redirigent automatiquement.
+* Champ `name:`, cible de compilation et binaire CLI alignés sur le
+  nouveau nom du repo. Shim d'entrée renommé `src/secrets.cr`
+  (charge toujours `src/crystal_secrets.cr`, le code).
+* Dépendances mises à jour suite à la cascade :
+** TOML désormais à `aloli-crystal/toml`.
+** Diceware désormais à `aloli-crystal/diceware`.
+* Les `require "crystal-toml"` et `require "crystal-diceware/diceware"`
+  dans `src/` sont mis à jour vers les nouveaux noms simples
+  (`require "toml"` / `require "diceware"`).
+* Le module interne `CrystalSecrets` et le dossier
+  `src/crystal_secrets/` restent inchangés — nettoyage reporté.
+
 == v0.2.1 — 2026-04-28
 
 Suivi du renommage de fichier dans
-`aloli-crystal/crystal-diceware` v0.1.3 : l'entrée est passée de
+`aloli-crystal/diceware` v0.1.3 : l'entrée est passée de
 `src/crystal_diceware.cr` à `src/diceware.cr` (pour correspondre
 au nom du module `Diceware`), donc le chemin de require a changé.
 
-* `require "crystal-diceware/crystal_diceware"`
-  → `require "crystal-diceware/diceware"`
-* `shard.yml` : `crystal-diceware ~> 0.1` résout en v0.1.3.
+* `require "diceware/crystal_diceware"`
+  → `require "diceware/diceware"`
+* `shard.yml` : `diceware ~> 0.1` résout en v0.1.3.
 * Aucun changement de comportement.
 
 == v0.2.0 — 2026-04-28
 
-Branchement des shards officiels `aloli-crystal/crystal-toml` v0.1
-et `aloli-crystal/crystal-diceware` v0.1. Les implémentations
+Branchement des shards officiels `aloli-crystal/toml` v0.1
+et `aloli-crystal/diceware` v0.1. Les implémentations
 locales v0.1 sont retirées de ce dépôt au profit des dépendances
 amont.
 
 * **`CrystalSecrets::Diceware` supprimé** — remplacé par le
   module top-level `Diceware` de
-  `aloli-crystal/crystal-diceware`. Mêmes identifiants de
+  `aloli-crystal/diceware`. Mêmes identifiants de
   wordlists (`:eff_long`, `:fr_mbelivo_5d`), mêmes modes
   `:auto`, `:manual`, `:hybrid`. Les wordlists embarquées ne
   sont plus dans ce repo.
 * **`CrystalSecrets::TomlCodec` supprimé** — remplacé par la
-  classe `TOML::Document` de `aloli-crystal/crystal-toml`. Le
+  classe `TOML::Document` de `aloli-crystal/toml`. Le
   coffre bénéficie désormais du **round-trip byte-identique** et
   de la **préservation des commentaires** : une annotation
   manuelle `API_KEY = "..." # rotated 2026-04-28` survit à un
@@ -54,7 +73,7 @@ recipient unique.
   deux wordlists embarquées : EFF Large (anglais, 7776 mots) et
   mbelivo 5d (français, 7776 mots). Trois modes de tirage :
   `:auto` (`Random::Secure`), `:manual` (l'appelant fournit ses
-  dés), `:hybrid`. Sera remplacé par `aloli-crystal/crystal-diceware`
+  dés), `:hybrid`. Sera remplacé par `aloli-crystal/diceware`
   quand celui-ci sera publié.
 * **KeychainMacOS** — shell-out à `/usr/bin/security` pour
   `add-generic-password`, `find-generic-password`,
@@ -69,7 +88,7 @@ recipient unique.
   sérialiseur custom qui émet `KEY = "value"` et blocs
   `[section]`. Valeurs multi-lignes via littéraux `'''…'''`. La
   préservation des commentaires viendra avec
-  `aloli-crystal/crystal-toml`.
+  `aloli-crystal/toml`.
 * **MasterKey** — enrobe `age-keygen` pour générer la paire de
   clés age de l'opérateur, stocke la privée dans Keychain,
   retrouve la publique avec `age-keygen -y`.
