@@ -2,7 +2,7 @@ require "process"
 require "./error"
 require "./platform/keychain_macos"
 
-module CrystalSecrets
+module Secrets
   # The age master key — generated once at `init`, stored in Keychain
   # (synced across the user's Macs via iCloud Keychain), and read on
   # demand by the rest of the shard.

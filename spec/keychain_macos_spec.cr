@@ -44,11 +44,11 @@ private def with_fake_security(behaviour : String? = nil, &)
   end
 end
 
-describe CrystalSecrets::KeychainMacOS do
+describe Secrets::KeychainMacOS do
   describe ".store" do
     it "calls add-generic-password with the right service/account and the value via stdin" do
       with_fake_security do |log|
-        CrystalSecrets::KeychainMacOS.store("master-key", "AGE-SECRET-KEY-1...")
+        Secrets::KeychainMacOS.store("master-key", "AGE-SECRET-KEY-1...")
         recorded = File.read(log)
         recorded.should contain("add-generic-password")
         recorded.should contain("-a master-key")
@@ -61,7 +61,7 @@ describe CrystalSecrets::KeychainMacOS do
     it "never puts the secret on argv" do
       secret = "very-private-AGE-SECRET-KEY-1abc123"
       with_fake_security do |log|
-        CrystalSecrets::KeychainMacOS.store("master-key", secret)
+        Secrets::KeychainMacOS.store("master-key", secret)
         cmd_line = File.read(log).lines.find! { |l| l.starts_with?("CMD:") }
         cmd_line.should_not contain(secret)
       end
@@ -69,8 +69,8 @@ describe CrystalSecrets::KeychainMacOS do
 
     it "raises KeychainError when security exits non-zero" do
       with_fake_security(behaviour: "exit 1") do
-        expect_raises(CrystalSecrets::KeychainError, /failed/) do
-          CrystalSecrets::KeychainMacOS.store("master-key", "x")
+        expect_raises(Secrets::KeychainError, /failed/) do
+          Secrets::KeychainMacOS.store("master-key", "x")
         end
       end
     end
@@ -79,14 +79,14 @@ describe CrystalSecrets::KeychainMacOS do
   describe ".fetch" do
     it "returns the value from stdout (chomped)" do
       with_fake_security(behaviour: "echo 'AGE-SECRET-KEY-1xyz'") do
-        CrystalSecrets::KeychainMacOS.fetch("master-key").should eq("AGE-SECRET-KEY-1xyz")
+        Secrets::KeychainMacOS.fetch("master-key").should eq("AGE-SECRET-KEY-1xyz")
       end
     end
 
     it "raises KeychainError when entry not found (exit 44)" do
       with_fake_security(behaviour: "exit 44") do
-        expect_raises(CrystalSecrets::KeychainError, /not found/) do
-          CrystalSecrets::KeychainMacOS.fetch("master-key")
+        expect_raises(Secrets::KeychainError, /not found/) do
+          Secrets::KeychainMacOS.fetch("master-key")
         end
       end
     end
@@ -95,13 +95,13 @@ describe CrystalSecrets::KeychainMacOS do
   describe ".exists?" do
     it "returns true on success" do
       with_fake_security do
-        CrystalSecrets::KeychainMacOS.exists?("master-key").should be_true
+        Secrets::KeychainMacOS.exists?("master-key").should be_true
       end
     end
 
     it "returns false on failure" do
       with_fake_security(behaviour: "exit 44") do
-        CrystalSecrets::KeychainMacOS.exists?("master-key").should be_false
+        Secrets::KeychainMacOS.exists?("master-key").should be_false
       end
     end
   end
@@ -109,7 +109,7 @@ describe CrystalSecrets::KeychainMacOS do
   describe ".delete" do
     it "calls delete-generic-password and ignores absent entries" do
       with_fake_security do |log|
-        CrystalSecrets::KeychainMacOS.delete("master-key")
+        Secrets::KeychainMacOS.delete("master-key")
         File.read(log).should contain("delete-generic-password")
       end
     end

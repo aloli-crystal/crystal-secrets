@@ -3,6 +3,22 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.2.3 — 2026-04-29
+
+=== Modifié
+
+* **Module interne renommé** `CrystalSecrets` → `Secrets` (convention
+  Aloli).
+* Dossier source `src/crystal_secrets/` → `src/secrets/` et fichier
+  d'entrée consolidé dans `src/secrets.cr`. Chemins `require`
+  internes adaptés.
+* Comportement et surface CLI inchangés.
+
+=== Note pour les consommateurs
+
+Aucun consommateur externe ne référence `CrystalSecrets::*`
+aujourd'hui ; renommage purement interne.
+
 == v0.2.2 — 2026-04-29
 
 === Modifié

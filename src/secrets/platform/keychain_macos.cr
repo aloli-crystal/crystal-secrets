@@ -1,7 +1,7 @@
 require "process"
 require "../error"
 
-module CrystalSecrets
+module Secrets
   # macOS Keychain backend, via shell-out to `/usr/bin/security`.
   #
   # The key material is fed/read through stdin/stdout — never through

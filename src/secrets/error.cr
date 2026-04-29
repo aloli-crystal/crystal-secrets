@@ -1,4 +1,4 @@
-module CrystalSecrets
+module Secrets
   class Error < Exception
   end
 

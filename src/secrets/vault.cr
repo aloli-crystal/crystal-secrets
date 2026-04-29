@@ -3,7 +3,7 @@ require "file_utils"
 require "random/secure"
 require "./error"
 
-module CrystalSecrets
+module Secrets
   # Vault encryption / decryption via shell-out to the `age(1)` binary
   # (https://age-encryption.org).
   #

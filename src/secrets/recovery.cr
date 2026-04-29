@@ -1,7 +1,7 @@
 require "./error"
 require "./vault"
 
-module CrystalSecrets
+module Secrets
   # Paper recovery: export the age private key as a passphrase-encrypted
   # blob (printable ASCII). Used at `init` (to print and store at the
   # physical safe) and at `master-key import` after losing the Mac.

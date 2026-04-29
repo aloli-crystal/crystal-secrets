@@ -1,6 +1,6 @@
 require "./spec_helper"
 
-describe CrystalSecrets::Vault do
+describe Secrets::Vault do
   describe "round-trip with a generated age keypair" do
     # We use the real `age` binary (assumed installed via `brew
     # install age` on macOS). The test generates a fresh key via
@@ -13,21 +13,21 @@ describe CrystalSecrets::Vault do
       recipient = key_block.lines.find! { |l| l.starts_with?("# public key:") }.split(' ', 4).last.strip
 
       payload = "DATABASE_URL = \"postgres://...\"\nAPI_KEY = \"abc\"\n"
-      ct = CrystalSecrets::Vault.encrypt(payload, recipient)
+      ct = Secrets::Vault.encrypt(payload, recipient)
       ct.starts_with?("-----BEGIN AGE ENCRYPTED FILE-----").should be_true
-      pt = CrystalSecrets::Vault.decrypt(ct, identity)
+      pt = Secrets::Vault.decrypt(ct, identity)
       pt.should eq(payload)
     end
 
     it "rejects a recipient that is not a public age key" do
-      expect_raises(CrystalSecrets::VaultError, /age1/) do
-        CrystalSecrets::Vault.encrypt("x", "not-an-age-key")
+      expect_raises(Secrets::VaultError, /age1/) do
+        Secrets::Vault.encrypt("x", "not-an-age-key")
       end
     end
 
     it "rejects an identity that is not a private age key" do
-      expect_raises(CrystalSecrets::VaultError, /AGE-SECRET-KEY-1/) do
-        CrystalSecrets::Vault.decrypt("ciphertext", "not-an-age-secret-key")
+      expect_raises(Secrets::VaultError, /AGE-SECRET-KEY-1/) do
+        Secrets::Vault.decrypt("ciphertext", "not-an-age-secret-key")
       end
     end
 
@@ -41,9 +41,9 @@ describe CrystalSecrets::Vault do
       kb2 = stdout2.to_s
       recipient2 = kb2.lines.find! { |l| l.starts_with?("# public key:") }.split(' ', 4).last.strip
 
-      ct = CrystalSecrets::Vault.encrypt("x", recipient2)
-      expect_raises(CrystalSecrets::VaultError, /decrypt failed/) do
-        CrystalSecrets::Vault.decrypt(ct, identity1)
+      ct = Secrets::Vault.encrypt("x", recipient2)
+      expect_raises(Secrets::VaultError, /decrypt failed/) do
+        Secrets::Vault.decrypt(ct, identity1)
       end
     end
   end
@@ -53,19 +53,19 @@ describe CrystalSecrets::Vault do
       payload = "AGE-SECRET-KEY-1ABC123MASTER..."
       pass = "perplex grouchy abdomen catacomb mournful prancing slingshot"
 
-      paper = CrystalSecrets::Vault.encrypt_with_passphrase(payload, pass)
+      paper = Secrets::Vault.encrypt_with_passphrase(payload, pass)
       paper.starts_with?("-----BEGIN CRYSTAL-SECRETS RECOVERY-----").should be_true
 
-      restored = CrystalSecrets::Vault.decrypt_with_passphrase(paper, pass)
+      restored = Secrets::Vault.decrypt_with_passphrase(paper, pass)
       restored.should eq(payload)
     end
 
     it "fails with the wrong passphrase" do
       payload = "secret-key-blob"
-      paper = CrystalSecrets::Vault.encrypt_with_passphrase(payload, "good passphrase")
+      paper = Secrets::Vault.encrypt_with_passphrase(payload, "good passphrase")
 
-      expect_raises(CrystalSecrets::VaultError) do
-        CrystalSecrets::Vault.decrypt_with_passphrase(paper, "wrong passphrase")
+      expect_raises(Secrets::VaultError) do
+        Secrets::Vault.decrypt_with_passphrase(paper, "wrong passphrase")
       end
     end
   end

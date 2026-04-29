@@ -1,10 +1,10 @@
 require "option_parser"
 require "file_utils"
-require "./crystal_secrets"
+require "./secrets"
 
 # Convention Aloli : every long flag has a short equivalent ; every
 # subcommand has a short alias.
-module CrystalSecrets::CLI
+module Secrets::CLI
   extend self
 
   DEFAULT_VAULT_DIR = "#{ENV["HOME"]}/.config/crystal-secrets/vaults"
@@ -24,7 +24,7 @@ module CrystalSecrets::CLI
     when "list", "ls"       then list_cmd(argv[1..-1])
     when "master-key", "mk" then master_key(argv[1..-1])
     when "version", "v", "--version", "-V"
-      puts "crystal-secrets #{CrystalSecrets::VERSION}"
+      puts "crystal-secrets #{Secrets::VERSION}"
       0
     when "help", "h", "--help", "-h"
       print_global_help(STDOUT)
@@ -66,7 +66,7 @@ module CrystalSecrets::CLI
       end
     end
 
-    keypair = CrystalSecrets::MasterKey.generate!(force: force)
+    keypair = Secrets::MasterKey.generate!(force: force)
 
     suggested = ::Diceware.generate(words: words, language: language)
     puts ""
@@ -96,7 +96,7 @@ module CrystalSecrets::CLI
                    return 64
                  end
 
-    paper = CrystalSecrets::Recovery.export(keypair.identity, passphrase)
+    paper = Secrets::Recovery.export(keypair.identity, passphrase)
 
     puts ""
     puts "════════════════════════════════════════════════════════════════════"
@@ -116,7 +116,7 @@ module CrystalSecrets::CLI
     puts paper
     puts "════════════════════════════════════════════════════════════════════"
     puts ""
-    puts "Master key stored in Keychain (account: #{CrystalSecrets::MasterKey::KEYCHAIN_ACCOUNT})."
+    puts "Master key stored in Keychain (account: #{Secrets::MasterKey::KEYCHAIN_ACCOUNT})."
     0
   rescue ex
     STDERR.puts "init failed: #{ex.message}"
@@ -165,9 +165,9 @@ module CrystalSecrets::CLI
       return 1
     end
 
-    keypair = CrystalSecrets::MasterKey.read
+    keypair = Secrets::MasterKey.read
     initial = "# vault: #{name} (created #{Time.utc.to_s("%Y-%m-%d")})\n"
-    ciphertext = CrystalSecrets::Vault.encrypt(initial, keypair.recipient)
+    ciphertext = Secrets::Vault.encrypt(initial, keypair.recipient)
     File.write(path, ciphertext)
     File.chmod(path, 0o600)
 
@@ -281,7 +281,7 @@ module CrystalSecrets::CLI
   end
 
   def master_key_export(argv : Array(String)) : Int32
-    keypair = CrystalSecrets::MasterKey.read
+    keypair = Secrets::MasterKey.read
     print "Passphrase (hidden): "
     STDOUT.flush
     passphrase = read_secret_from_stdin
@@ -289,7 +289,7 @@ module CrystalSecrets::CLI
       STDERR.puts "no passphrase provided; aborting"
       return 64
     end
-    paper = CrystalSecrets::Recovery.export(keypair.identity, passphrase)
+    paper = Secrets::Recovery.export(keypair.identity, passphrase)
     puts paper
     0
   rescue ex
@@ -307,8 +307,8 @@ module CrystalSecrets::CLI
       STDERR.puts "no passphrase provided; aborting"
       return 64
     end
-    identity = CrystalSecrets::Recovery.import(paper, passphrase)
-    keypair = CrystalSecrets::MasterKey.install!(identity)
+    identity = Secrets::Recovery.import(paper, passphrase)
+    keypair = Secrets::MasterKey.install!(identity)
     puts "master key restored. Public key:"
     puts "    #{keypair.recipient}"
     0
@@ -345,17 +345,17 @@ module CrystalSecrets::CLI
   private def read_vault(name : String, vault_dir : String) : ::TOML::Document
     path = File.join(vault_dir, "#{name}.toml.age")
     raise "vault not found: #{path}. Did you run `crystal-secrets vault create`?" unless File.exists?(path)
-    keypair = CrystalSecrets::MasterKey.read
+    keypair = Secrets::MasterKey.read
     ciphertext = File.read(path)
-    plaintext = CrystalSecrets::Vault.decrypt(ciphertext, keypair.identity)
+    plaintext = Secrets::Vault.decrypt(ciphertext, keypair.identity)
     ::TOML.parse(plaintext)
   end
 
   private def write_vault(name : String, vault_dir : String, doc : ::TOML::Document) : Nil
     path = File.join(vault_dir, "#{name}.toml.age")
-    keypair = CrystalSecrets::MasterKey.read
+    keypair = Secrets::MasterKey.read
     plaintext = doc.to_toml
-    ciphertext = CrystalSecrets::Vault.encrypt(plaintext, keypair.recipient)
+    ciphertext = Secrets::Vault.encrypt(plaintext, keypair.recipient)
     File.write(path, ciphertext)
     File.chmod(path, 0o600)
   end
@@ -395,4 +395,4 @@ module CrystalSecrets::CLI
   end
 end
 
-exit CrystalSecrets::CLI.run(ARGV) if PROGRAM_NAME.includes?("crystal-secrets") || PROGRAM_NAME.includes?("cli")
+exit Secrets::CLI.run(ARGV) if PROGRAM_NAME.includes?("crystal-secrets") || PROGRAM_NAME.includes?("cli")
