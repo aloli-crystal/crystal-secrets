@@ -3,6 +3,79 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.3.0 — 2026-05-10
+
+=== Ajouté — cinq nouvelles sous-commandes (lot 1 de la roadmap README)
+
+* `secrets delete -n VAULT -k KEY` (alias `rm`) — supprime une clé
+  d'un coffre. Sortie 1 si la clé n'existe pas.
+* `secrets edit -n VAULT` (alias `e`) — déchiffre le coffre dans un
+  fichier temporaire mode 0600, lance `$EDITOR` (défaut `vi`),
+  valide que le buffer édité reste un TOML correct, re-chiffre. Le
+  fichier temporaire est wipé (best-effort) puis supprimé que
+  l'éditeur ait réussi ou non. Si l'utilisateur quitte non-zéro, le
+  coffre reste intact.
+* `secrets rotation -n VAULT` (alias `r`) — re-chiffre le coffre
+  avec la clé maîtresse courante. Utile si le fichier `.age` a
+  fuité : un nouveau nonce donne un nouveau ciphertext pour le
+  même plaintext, donc les anciennes copies ne peuvent plus être
+  confondues avec l'état canonique. Prendra en compte le futur
+  `recipients.toml` une fois la v0.4.0 multi-recipients livrée.
+* `secrets diff -n VAULT --against PATH.age` (alias `df`) — compare
+  le plaintext du coffre courant avec un autre fichier `.age`
+  (typiquement un checkout git précédent). Les deux doivent
+  déchiffrer avec la clé maîtresse courante. Sortie : diff unifié
+  via `diff(1)`. Les deux buffers en clair passent par des
+  tempfiles mode 0600, wipés + supprimés dans `ensure`.
+* `secrets log -n VAULT` (alias `l`) — affiche le journal d'audit
+  du coffre.
+
+=== Ajouté — journal d'audit append-only par coffre
+
+Nouveau module `Secrets::Audit` (`src/secrets/audit.cr`) qui expose :
+
+* `Audit.log(vault, op, key=nil)` — append d'une ligne tab-separated
+  `<RFC3339 UTC> \\t <user> \\t <op> \\t <key|->` dans
+  `${XDG_CONFIG_HOME:-~/.config}/secrets/audit/<vault>.log`, mode 0600.
+* `Audit.read(vault)` — retourne les lignes en tableau de strings.
+
+`set`, `delete`, `vault create`, `edit` et `rotation` journalisent
+toutes leurs mutations via ce module, donnant à l'opérateur un
+historique « quand ai-je touché ce coffre la dernière fois, et
+pourquoi ? ».
+
+Le journal est append-only en esprit, pas inviolable — un attaquant
+avec accès en écriture au fichier peut le falsifier. C'est un
+audit côté opérateur, pas une frontière de sécurité.
+
+=== Ajouté — helper `Secrets::Editor`
+
+Nouveau module `src/secrets/editor.cr`. Lance `$EDITOR` (ou
+`$VISUAL`, ou `vi`) sur un fichier temporaire mode 0600 et retourne
+le buffer édité. Utilisé par `edit_cmd` mais conçu aussi pour le
+verbe `secrets env` à venir (lot .env, v0.5.0). Wipe le fichier
+temporaire dans `ensure` quelle que soit la sortie de l'éditeur.
+
+=== Refactor
+
+* `Secrets::XDG_CONFIG_HOME` et `Secrets::CONFIG_DIR` sont
+  maintenant des constantes au top-level dans `src/secrets.cr`. Le
+  CLI et le module audit s'y réfèrent tous deux.
+* `cli.cr` gagne deux helpers privés : `parse_vault_only_args`
+  (pour les commandes qui n'ont besoin que d'un nom de coffre) et
+  `vault_path` (utilisé par edit, rotation, diff, et les
+  read/write_vault existants).
+
+=== Tests
+
+* `spec/audit_spec.cr` — 4 examples couvrant la création du log,
+  la sémantique d'append, le cas du coffre sans historique, et le
+  mode 0600 du fichier.
+* `spec/editor_spec.cr` — 4 examples couvrant l'édition réussie,
+  le no-op, la sortie non-zéro de l'éditeur, et le nettoyage du
+  fichier temporaire.
+* Total : 31 examples, 0 failures.
+
 == v0.2.6 — 2026-05-10
 
 === Modifié

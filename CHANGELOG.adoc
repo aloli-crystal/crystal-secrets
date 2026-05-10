@@ -3,6 +3,75 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.3.0 — 2026-05-10
+
+=== Added — five new subcommands (lot 1 of the README roadmap)
+
+* `secrets delete -n VAULT -k KEY` (alias `rm`) — remove a key from a
+  vault. Errors with exit code 1 if the key is absent.
+* `secrets edit -n VAULT` (alias `e`) — decrypt the vault into a
+  mode-0600 tempfile, spawn `$EDITOR` (default `vi`), validate the
+  edited buffer is still valid TOML, re-encrypt. Tempfile is wiped
+  (best-effort) and deleted whether the editor succeeded or not. If
+  the user exits the editor non-zero, the vault is left untouched.
+* `secrets rotation -n VAULT` (alias `r`) — re-encrypt the vault under
+  the current master key. Useful when the ciphertext file has leaked:
+  a fresh nonce gives a new ciphertext for the same plaintext, so
+  backups from before the rotation cannot be confused with the
+  current canonical state. Will pick up the latest `recipients.toml`
+  once v0.4.0 ships multi-recipients.
+* `secrets diff -n VAULT --against PATH.age` (alias `df`) — compare
+  the current vault plaintext against another encrypted vault file
+  (typically a previous git checkout). Both must decrypt with the
+  current master key. Output is a unified diff via `diff(1)`. Both
+  decrypted buffers go through mode-0600 tempfiles, wiped + deleted
+  in `ensure`.
+* `secrets log -n VAULT` (alias `l`) — print the audit log of a
+  vault.
+
+=== Added — append-only per-vault audit log
+
+New module `Secrets::Audit` (`src/secrets/audit.cr`) exposes:
+
+* `Audit.log(vault, op, key=nil)` — append a tab-separated line
+  `<RFC3339 UTC> \t <user> \t <op> \t <key|->` to
+  `${XDG_CONFIG_HOME:-~/.config}/secrets/audit/<vault>.log`,
+  mode 0600.
+* `Audit.read(vault)` — return the lines as an array of strings.
+
+`set`, `delete`, `vault create`, `edit` and `rotation` all log their
+mutations through this module, giving the operator a "when did I
+last touch this vault, and why?" trail.
+
+The log is append-only in spirit but not tamper-proof — an attacker
+with write access to the log file can edit it. The intent is
+operator-side audit, not security boundary.
+
+=== Added — `Secrets::Editor` helper
+
+New module `src/secrets/editor.cr`. Spawns `$EDITOR` (or `$VISUAL`,
+or `vi`) on a mode-0600 tempfile and returns the edited buffer.
+Used by `edit_cmd` but also intended for the upcoming `secrets env`
+verb (lot .env, v0.5.0). Wipes the tempfile in `ensure` regardless
+of editor exit code.
+
+=== Refactor
+
+* `Secrets::XDG_CONFIG_HOME` and `Secrets::CONFIG_DIR` are now
+  top-level constants in `src/secrets.cr`. The CLI and the audit
+  module both read from these.
+* `cli.cr` gets two new private helpers: `parse_vault_only_args`
+  (for commands that only need a vault name) and `vault_path` (used
+  by edit, rotation, diff, and the existing read/write_vault).
+
+=== Tests
+
+* `spec/audit_spec.cr` — 4 examples covering log creation, append
+  semantics, missing-vault behaviour, and 0600 file mode.
+* `spec/editor_spec.cr` — 4 examples covering successful edit,
+  no-op edit, non-zero editor exit, and tempfile cleanup.
+* Total: 31 examples, 0 failures.
+
 == v0.2.6 — 2026-05-10
 
 === Changed

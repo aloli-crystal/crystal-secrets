@@ -7,9 +7,8 @@ require "./secrets"
 module Secrets::CLI
   extend self
 
-  XDG_CONFIG_HOME   = ENV["XDG_CONFIG_HOME"]? || "#{ENV["HOME"]}/.config"
-  DEFAULT_VAULT_DIR = "#{XDG_CONFIG_HOME}/secrets/vaults"
-  LEGACY_VAULT_DIR  = "#{XDG_CONFIG_HOME}/crystal-secrets/vaults"
+  DEFAULT_VAULT_DIR = "#{Secrets::CONFIG_DIR}/vaults"
+  LEGACY_VAULT_DIR  = "#{Secrets::XDG_CONFIG_HOME}/crystal-secrets/vaults"
   DEFAULT_WORDS     = 7
 
   # Transparent rename migration. v0.2.6 moved the default vault dir
@@ -38,7 +37,12 @@ module Secrets::CLI
     when "vault", "vt"      then vault(argv[1..-1])
     when "get", "g"         then get(argv[1..-1])
     when "set", "s"         then set_cmd(argv[1..-1])
+    when "delete", "rm"     then delete_cmd(argv[1..-1])
     when "list", "ls"       then list_cmd(argv[1..-1])
+    when "edit", "e"        then edit_cmd(argv[1..-1])
+    when "rotation", "r"    then rotation_cmd(argv[1..-1])
+    when "diff", "df"       then diff_cmd(argv[1..-1])
+    when "log", "l"         then log_cmd(argv[1..-1])
     when "master-key", "mk" then master_key(argv[1..-1])
     when "version", "v", "--version", "-V"
       puts "secrets #{Secrets::VERSION}"
@@ -187,6 +191,7 @@ module Secrets::CLI
     ciphertext = Secrets::Vault.encrypt(initial, keypair.recipient)
     File.write(path, ciphertext)
     File.chmod(path, 0o600)
+    Secrets::Audit.log(name, "create")
 
     puts "vault created: #{path}"
     0
@@ -234,11 +239,36 @@ module Secrets::CLI
     doc = read_vault(vault_name, vault_dir)
     doc.set(key, value)
     write_vault(vault_name, vault_dir, doc)
+    Secrets::Audit.log(vault_name, "set", key)
 
     puts "set #{key} in #{vault_name}"
     0
   rescue ex
     STDERR.puts "set failed: #{ex.message}"
+    1
+  end
+
+  # ====================================================================
+  # delete
+  # ====================================================================
+
+  def delete_cmd(argv : Array(String)) : Int32
+    vault_name, key, vault_dir = parse_vault_key_args(argv, "delete")
+    return 64 if vault_name.empty? || key.empty?
+
+    doc = read_vault(vault_name, vault_dir)
+    removed = doc.delete(key)
+    unless removed
+      STDERR.puts "key not found: #{key}"
+      return 1
+    end
+    write_vault(vault_name, vault_dir, doc)
+    Secrets::Audit.log(vault_name, "delete", key)
+
+    puts "deleted #{key} from #{vault_name}"
+    0
+  rescue ex
+    STDERR.puts "delete failed: #{ex.message}"
     1
   end
 
@@ -277,6 +307,174 @@ module Secrets::CLI
     0
   rescue ex
     STDERR.puts "list failed: #{ex.message}"
+    1
+  end
+
+  # ====================================================================
+  # edit
+  # ====================================================================
+
+  def edit_cmd(argv : Array(String)) : Int32
+    vault_name, vault_dir = parse_vault_only_args(argv, "edit")
+    return 64 if vault_name.empty?
+
+    doc = read_vault(vault_name, vault_dir)
+    before = doc.to_toml
+    after = Secrets::Editor.edit(before)
+
+    if after == before
+      puts "no changes, vault not touched"
+      return 0
+    end
+
+    # Validate the edited buffer is still valid TOML before re-encrypting.
+    begin
+      ::TOML.parse(after)
+    rescue ex
+      STDERR.puts "edited content is not valid TOML: #{ex.message}"
+      STDERR.puts "vault was NOT modified."
+      return 1
+    end
+
+    keypair = Secrets::MasterKey.read
+    ciphertext = Secrets::Vault.encrypt(after, keypair.recipient)
+    File.write(vault_path(vault_name, vault_dir), ciphertext)
+    File.chmod(vault_path(vault_name, vault_dir), 0o600)
+    Secrets::Audit.log(vault_name, "edit")
+
+    puts "edited #{vault_name}"
+    0
+  rescue ex
+    STDERR.puts "edit failed: #{ex.message}"
+    1
+  end
+
+  # ====================================================================
+  # rotation
+  # ====================================================================
+  # Re-encrypt the vault under the current master key. Useful when the
+  # ciphertext file has leaked: a fresh nonce gives a new ciphertext
+  # for the same plaintext, so backups from before the rotation cannot
+  # be confused with the current canonical state. (Note: an attacker
+  # who already decrypted a leaked copy still has the plaintext —
+  # rotation invalidates the *file*, not the secrets it held.)
+  #
+  # Once multi-recipients land (v0.4.0), `rotation` will also pick up
+  # the latest `recipients.toml`, which is when it becomes load-bearing.
+
+  def rotation_cmd(argv : Array(String)) : Int32
+    vault_name, vault_dir = parse_vault_only_args(argv, "rotation")
+    return 64 if vault_name.empty?
+
+    doc = read_vault(vault_name, vault_dir)
+    write_vault(vault_name, vault_dir, doc)
+    Secrets::Audit.log(vault_name, "rotation")
+
+    puts "rotated #{vault_name} (re-encrypted under current master key)"
+    0
+  rescue ex
+    STDERR.puts "rotation failed: #{ex.message}"
+    1
+  end
+
+  # ====================================================================
+  # diff
+  # ====================================================================
+  # Compare the current vault plaintext to another encrypted vault
+  # file (typically a previous git checkout, e.g. `git show HEAD~1:foo.toml.age`
+  # piped to a tempfile). Both files must be decryptable with the
+  # current master key. Output is a unified diff (`diff -u`).
+
+  def diff_cmd(argv : Array(String)) : Int32
+    vault_name = ""
+    vault_dir = DEFAULT_VAULT_DIR
+    against = ""
+
+    OptionParser.parse(argv.dup) do |parser|
+      parser.banner = "Usage: secrets diff -n VAULT --against PATH.age [options]"
+      parser.on("-n NAME", "--name=NAME", "Current vault name") { |v| vault_name = v }
+      parser.on("-a PATH", "--against=PATH", "Path to the other encrypted vault to compare against") { |v| against = v }
+      parser.on("-d DIR", "--vault-dir=DIR", "Vault directory") { |v| vault_dir = v }
+      parser.on("-h", "--help", "Show this help") { puts parser; exit 0 }
+    end
+
+    if vault_name.empty?
+      STDERR.puts "missing -n/--name"
+      return 64
+    end
+    if against.empty?
+      STDERR.puts "missing -a/--against PATH.age"
+      return 64
+    end
+    unless File.exists?(against)
+      STDERR.puts "against file not found: #{against}"
+      return 1
+    end
+
+    keypair = Secrets::MasterKey.read
+    current_text = Secrets::Vault.decrypt(File.read(vault_path(vault_name, vault_dir)), keypair.identity)
+    other_text = Secrets::Vault.decrypt(File.read(against), keypair.identity)
+
+    if current_text == other_text
+      puts "no differences"
+      return 0
+    end
+
+    # We shell out to /usr/bin/diff because reimplementing unified-diff
+    # is out of scope. Both buffers go through tempfiles mode 0600 so
+    # diff(1) can mmap them; they're wiped + deleted in `ensure`.
+    show_diff(against, current_text, other_text)
+  rescue ex
+    STDERR.puts "diff failed: #{ex.message}"
+    1
+  end
+
+  private def show_diff(against_path : String, current_text : String, other_text : String) : Int32
+    tmpdir = ENV["TMPDIR"]? || "/tmp"
+    cur_path = File.join(tmpdir, "secrets-diff-cur-#{Random::Secure.hex(8)}.toml")
+    oth_path = File.join(tmpdir, "secrets-diff-oth-#{Random::Secure.hex(8)}.toml")
+    File.write(cur_path, current_text)
+    File.chmod(cur_path, 0o600)
+    File.write(oth_path, other_text)
+    File.chmod(oth_path, 0o600)
+    begin
+      Process.run("diff", ["-u", oth_path, cur_path],
+        output: STDOUT, error: STDERR)
+      # diff(1) exits 0 (identical), 1 (differences), 2 (error).
+      # We've already short-circuited the identical case; non-zero
+      # here means the diff was printed and we're done.
+      0
+    ensure
+      [cur_path, oth_path].each do |path|
+        if File.exists?(path)
+          begin
+            File.open(path, "w") { |f| f.write(Bytes.new(File.size(path).to_i32, 0_u8)) }
+          rescue
+          end
+          File.delete(path)
+        end
+      end
+    end
+  end
+
+  # ====================================================================
+  # log
+  # ====================================================================
+  # Print the audit log for a vault.
+
+  def log_cmd(argv : Array(String)) : Int32
+    vault_name, _vault_dir = parse_vault_only_args(argv, "log")
+    return 64 if vault_name.empty?
+
+    lines = Secrets::Audit.read(vault_name)
+    if lines.empty?
+      puts "no audit entries for #{vault_name}"
+      return 0
+    end
+    lines.each { |line| puts line }
+    0
+  rescue ex
+    STDERR.puts "log failed: #{ex.message}"
     1
   end
 
@@ -359,8 +557,32 @@ module Secrets::CLI
     {vault_name, key, vault_dir}
   end
 
+  # Variant for commands that take only a vault name (edit, rotation,
+  # log) — no key argument.
+  private def parse_vault_only_args(argv : Array(String), cmd : String) : Tuple(String, String)
+    vault_name = ""
+    vault_dir = DEFAULT_VAULT_DIR
+
+    OptionParser.parse(argv.dup) do |parser|
+      parser.banner = "Usage: secrets #{cmd} -n VAULT [options]"
+      parser.on("-n NAME", "--name=NAME", "Vault name (e.g. prod)") { |v| vault_name = v }
+      parser.on("-d DIR", "--vault-dir=DIR", "Vault directory") { |v| vault_dir = v }
+      parser.on("-h", "--help", "Show this help") { puts parser; exit 0 }
+    end
+
+    if vault_name.empty? && argv.size >= 1 && !argv.first.starts_with?("-")
+      vault_name = argv.first
+    end
+
+    {vault_name, vault_dir}
+  end
+
+  private def vault_path(name : String, vault_dir : String) : String
+    File.join(vault_dir, "#{name}.toml.age")
+  end
+
   private def read_vault(name : String, vault_dir : String) : ::TOML::Document
-    path = File.join(vault_dir, "#{name}.toml.age")
+    path = vault_path(name, vault_dir)
     raise "vault not found: #{path}. Did you run `secrets vault create`?" unless File.exists?(path)
     keypair = Secrets::MasterKey.read
     ciphertext = File.read(path)
@@ -369,7 +591,7 @@ module Secrets::CLI
   end
 
   private def write_vault(name : String, vault_dir : String, doc : ::TOML::Document) : Nil
-    path = File.join(vault_dir, "#{name}.toml.age")
+    path = vault_path(name, vault_dir)
     keypair = Secrets::MasterKey.read
     plaintext = doc.to_toml
     ciphertext = Secrets::Vault.encrypt(plaintext, keypair.recipient)
@@ -399,14 +621,19 @@ module Secrets::CLI
     io.puts "Usage: secrets SUBCOMMAND [options]"
     io.puts
     io.puts "Subcommands :"
-    io.puts "  init,  i               Generate the master key and the recovery paper"
-    io.puts "  vault, vt   create     Create a new vault file"
-    io.puts "  get,   g               Read a secret"
-    io.puts "  set,   s               Write a secret (value via stdin)"
-    io.puts "  list,  ls              List the keys of a vault"
-    io.puts "  master-key, mk         Manage the master key (export/import)"
-    io.puts "  version, v             Print version"
-    io.puts "  help,    h             Show this help"
+    io.puts "  init,       i              Generate the master key and the recovery paper"
+    io.puts "  vault,      vt   create    Create a new vault file"
+    io.puts "  get,        g              Read a secret"
+    io.puts "  set,        s              Write a secret (value via stdin)"
+    io.puts "  delete,     rm             Delete a secret from a vault"
+    io.puts "  list,       ls             List the keys of a vault"
+    io.puts "  edit,       e              Open a vault in $EDITOR (decrypt → edit → re-encrypt)"
+    io.puts "  rotation,   r              Re-encrypt a vault under the current master key"
+    io.puts "  diff,       df             Compare a vault with another encrypted vault file"
+    io.puts "  log,        l              Print the audit log of a vault"
+    io.puts "  master-key, mk             Manage the master key (export/import)"
+    io.puts "  version,    v              Print version"
+    io.puts "  help,       h              Show this help"
     io.puts
     io.puts "Run `secrets SUBCOMMAND -h` for subcommand-specific options."
   end
