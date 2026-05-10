@@ -3,6 +3,52 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.2.6 — 2026-05-10
+
+=== Modifié
+
+Le repo avait été renommé `aloli-crystal/crystal-secrets` →
+`aloli-crystal/secrets` en v0.2.2, mais l'ancien nom subsistait à
+plusieurs endroits : 12 chaînes `crystal-secrets` en dur dans les
+banners CLI, l'aide et les messages d'erreur ; le répertoire de
+coffres par défaut `~/.config/crystal-secrets/vaults` ; et surtout
+l'identifiant de service Keychain `dev.aloli.crystal-secrets`.
+v0.2.6 termine le rename et embarque une migration transparente —
+un utilisateur déjà initialisé ne voit rien.
+
+* Banners, aide, messages d'erreur et la détection du binaire via
+  `PROGRAM_NAME` passent tous de `crystal-secrets` à `secrets`.
+* `DEFAULT_VAULT_DIR` est désormais
+  `${XDG_CONFIG_HOME:-~/.config}/secrets/vaults` (avant :
+  `crystal-secrets/vaults`). `XDG_CONFIG_HOME` est respecté
+  (alignement sur `feedback_xdg_config_convention.md`).
+* Identifiant du service Keychain : `dev.aloli.secrets` (avant :
+  `dev.aloli.crystal-secrets`).
+
+=== Migrations (transparentes, idempotentes)
+
+* **Répertoire de coffres** — à chaque commande, si
+  `~/.config/secrets/vaults` n'existe pas et que
+  `~/.config/crystal-secrets/vaults` existe, ce dernier est renommé
+  vers le premier. Le parent vide est supprimé.
+* **Entrée Keychain** — `MasterKey.read` et `MasterKey.generate!`
+  appellent d'abord `KeychainMacOS.migrate_legacy_if_needed!` : si
+  le nouveau service-id n'a pas d'entrée mais l'ancien si, la
+  valeur est copiée vers le nouveau, puis l'ancienne supprimée. Les
+  deux opérations sont des no-op pour les installations déjà à jour.
+
+Les deux migrations ne laissent aucune trace sur une installation
+neuve ou chez les utilisateurs déjà passés en v0.2.5 sur les
+nouveaux chemins/service.
+
+=== Tests
+
+* +4 specs couvrent la migration Keychain (no-op, copie, priorité
+  quand les deux existent). Le faux script `security` a été étendu
+  d'un mode stateful dans `spec/keychain_macos_spec.cr` pour pouvoir
+  asserter des séquences de migration multi-étapes de bout en bout.
+  Total : 23 examples, 0 failures.
+
 == v0.2.3 — 2026-04-29
 
 === Modifié

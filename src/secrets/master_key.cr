@@ -27,6 +27,7 @@ module Secrets
     # public key. Refuses if a key already exists in Keychain (use
     # `force: true` to overwrite — destructive).
     def generate!(force : Bool = false) : KeyPair
+      KeychainMacOS.migrate_legacy_if_needed!(KEYCHAIN_ACCOUNT)
       if KeychainMacOS.exists?(KEYCHAIN_ACCOUNT) && !force
         raise Error.new("master key already exists in Keychain. Use force=true to overwrite (destructive).")
       end
@@ -52,7 +53,8 @@ module Secrets
     # Read the master key from Keychain. Raises NotInitializedError if
     # no key is present (= `init` has not been run).
     def read : KeyPair
-      raise NotInitializedError.new("no master key in Keychain — run `crystal-secrets init` first") unless KeychainMacOS.exists?(KEYCHAIN_ACCOUNT)
+      KeychainMacOS.migrate_legacy_if_needed!(KEYCHAIN_ACCOUNT)
+      raise NotInitializedError.new("no master key in Keychain — run `secrets init` first") unless KeychainMacOS.exists?(KEYCHAIN_ACCOUNT)
       identity = KeychainMacOS.fetch(KEYCHAIN_ACCOUNT)
       recipient = derive_recipient(identity)
       KeyPair.new(identity, recipient)

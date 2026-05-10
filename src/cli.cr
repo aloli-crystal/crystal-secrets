@@ -7,10 +7,27 @@ require "./secrets"
 module Secrets::CLI
   extend self
 
-  DEFAULT_VAULT_DIR = "#{ENV["HOME"]}/.config/crystal-secrets/vaults"
+  XDG_CONFIG_HOME   = ENV["XDG_CONFIG_HOME"]? || "#{ENV["HOME"]}/.config"
+  DEFAULT_VAULT_DIR = "#{XDG_CONFIG_HOME}/secrets/vaults"
+  LEGACY_VAULT_DIR  = "#{XDG_CONFIG_HOME}/crystal-secrets/vaults"
   DEFAULT_WORDS     = 7
 
+  # Transparent rename migration. v0.2.6 moved the default vault dir
+  # from `~/.config/crystal-secrets/vaults` to `~/.config/secrets/vaults`.
+  # If a user has the legacy dir but not the new one, rename it
+  # silently. Idempotent and safe to call on every command.
+  private def migrate_legacy_vault_dir
+    return if Dir.exists?(DEFAULT_VAULT_DIR)
+    return unless Dir.exists?(LEGACY_VAULT_DIR)
+    Dir.mkdir_p(File.dirname(DEFAULT_VAULT_DIR))
+    File.rename(LEGACY_VAULT_DIR, DEFAULT_VAULT_DIR)
+    legacy_parent = File.dirname(LEGACY_VAULT_DIR)
+    Dir.delete(legacy_parent) if Dir.exists?(legacy_parent) && Dir.empty?(legacy_parent)
+  end
+
   def run(argv : Array(String)) : Int32
+    migrate_legacy_vault_dir
+
     if argv.empty?
       print_global_help(STDERR)
       return 64
@@ -24,7 +41,7 @@ module Secrets::CLI
     when "list", "ls"       then list_cmd(argv[1..-1])
     when "master-key", "mk" then master_key(argv[1..-1])
     when "version", "v", "--version", "-V"
-      puts "crystal-secrets #{Secrets::VERSION}"
+      puts "secrets #{Secrets::VERSION}"
       0
     when "help", "h", "--help", "-h"
       print_global_help(STDOUT)
@@ -46,7 +63,7 @@ module Secrets::CLI
     force = false
 
     OptionParser.parse(argv.dup) do |parser|
-      parser.banner = "Usage: crystal-secrets init [options]"
+      parser.banner = "Usage: secrets init [options]"
       parser.on("-w N", "--words=N", "Diceware passphrase length (default: #{DEFAULT_WORDS})") { |v| words = v.to_i }
       parser.on("-l LANG", "--language=LANG", "Diceware wordlist (eff_long | fr_mbelivo_5d ; default: auto via $LANG)") do |v|
         language = case v
@@ -143,7 +160,7 @@ module Secrets::CLI
     vault_dir = DEFAULT_VAULT_DIR
 
     OptionParser.parse(argv.dup) do |parser|
-      parser.banner = "Usage: crystal-secrets vault create -n NAME [options]"
+      parser.banner = "Usage: secrets vault create -n NAME [options]"
       parser.on("-n NAME", "--name=NAME", "Vault name (e.g. prod, staging)") { |v| name = v }
       parser.on("-d DIR", "--vault-dir=DIR", "Vault directory (default: #{DEFAULT_VAULT_DIR})") { |v| vault_dir = v }
       parser.on("-h", "--help", "Show this help") { puts parser; exit 0 }
@@ -234,7 +251,7 @@ module Secrets::CLI
     vault_dir = DEFAULT_VAULT_DIR
 
     OptionParser.parse(argv.dup) do |parser|
-      parser.banner = "Usage: crystal-secrets list -n VAULT [options]"
+      parser.banner = "Usage: secrets list -n VAULT [options]"
       parser.on("-n NAME", "--name=NAME", "Vault name") { |v| vault_name = v }
       parser.on("-d DIR", "--vault-dir=DIR", "Vault directory") { |v| vault_dir = v }
       parser.on("-h", "--help", "Show this help") { puts parser; exit 0 }
@@ -327,7 +344,7 @@ module Secrets::CLI
     vault_dir = DEFAULT_VAULT_DIR
 
     OptionParser.parse(argv.dup) do |parser|
-      parser.banner = "Usage: crystal-secrets #{cmd} -n VAULT -k KEY [options]"
+      parser.banner = "Usage: secrets #{cmd} -n VAULT -k KEY [options]"
       parser.on("-n NAME", "--name=NAME", "Vault name (e.g. prod)") { |v| vault_name = v }
       parser.on("-k KEY", "--key=KEY", "Secret key (e.g. DATABASE_URL or stripe.secret_key)") { |v| key = v }
       parser.on("-d DIR", "--vault-dir=DIR", "Vault directory") { |v| vault_dir = v }
@@ -344,7 +361,7 @@ module Secrets::CLI
 
   private def read_vault(name : String, vault_dir : String) : ::TOML::Document
     path = File.join(vault_dir, "#{name}.toml.age")
-    raise "vault not found: #{path}. Did you run `crystal-secrets vault create`?" unless File.exists?(path)
+    raise "vault not found: #{path}. Did you run `secrets vault create`?" unless File.exists?(path)
     keypair = Secrets::MasterKey.read
     ciphertext = File.read(path)
     plaintext = Secrets::Vault.decrypt(ciphertext, keypair.identity)
@@ -379,7 +396,7 @@ module Secrets::CLI
   end
 
   private def print_global_help(io : IO)
-    io.puts "Usage: crystal-secrets SUBCOMMAND [options]"
+    io.puts "Usage: secrets SUBCOMMAND [options]"
     io.puts
     io.puts "Subcommands :"
     io.puts "  init,  i               Generate the master key and the recovery paper"
@@ -391,8 +408,8 @@ module Secrets::CLI
     io.puts "  version, v             Print version"
     io.puts "  help,    h             Show this help"
     io.puts
-    io.puts "Run `crystal-secrets SUBCOMMAND -h` for subcommand-specific options."
+    io.puts "Run `secrets SUBCOMMAND -h` for subcommand-specific options."
   end
 end
 
-exit Secrets::CLI.run(ARGV) if PROGRAM_NAME.includes?("crystal-secrets") || PROGRAM_NAME.includes?("cli")
+exit Secrets::CLI.run(ARGV) if PROGRAM_NAME.includes?("secrets") || PROGRAM_NAME.includes?("cli")

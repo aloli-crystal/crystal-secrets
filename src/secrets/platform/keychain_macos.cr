@@ -11,7 +11,8 @@ module Secrets
   module KeychainMacOS
     extend self
 
-    SERVICE = "dev.aloli.crystal-secrets"
+    SERVICE        = "dev.aloli.secrets"
+    LEGACY_SERVICE = "dev.aloli.crystal-secrets"
 
     # Override at runtime (tests use a fake script).
     def binary : String
@@ -61,6 +62,53 @@ module Secrets
         "delete-generic-password",
         "-a", account,
         "-s", SERVICE,
+      ], output: Process::Redirect::Close, error: Process::Redirect::Close)
+    end
+
+    # Transparent rename migration — Keychain entries created before
+    # the v0.2.6 rename live under LEGACY_SERVICE ("dev.aloli.crystal-secrets").
+    # If a caller looks up `account` under SERVICE and finds nothing, but
+    # the entry exists under LEGACY_SERVICE, this method copies it to
+    # SERVICE then deletes the legacy one. Idempotent and safe to call
+    # on every read path. Returns true if a migration happened.
+    def migrate_legacy_if_needed!(account : String) : Bool
+      return false if exists?(account)
+      return false unless legacy_exists?(account)
+
+      legacy_value = legacy_fetch(account)
+      store(account, legacy_value)
+      legacy_delete(account)
+      true
+    end
+
+    private def legacy_exists?(account : String) : Bool
+      status = Process.run(binary, [
+        "find-generic-password",
+        "-a", account,
+        "-s", LEGACY_SERVICE,
+        "-g",
+      ], output: Process::Redirect::Close, error: Process::Redirect::Close)
+      status.success?
+    end
+
+    private def legacy_fetch(account : String) : String
+      stdout = IO::Memory.new
+      stderr = IO::Memory.new
+      status = Process.run(binary, [
+        "find-generic-password",
+        "-a", account,
+        "-s", LEGACY_SERVICE,
+        "-w",
+      ], output: stdout, error: stderr)
+      raise KeychainError.new("legacy keychain entry vanished mid-migration for account=#{account}") unless status.success?
+      stdout.to_s.chomp
+    end
+
+    private def legacy_delete(account : String) : Nil
+      Process.run(binary, [
+        "delete-generic-password",
+        "-a", account,
+        "-s", LEGACY_SERVICE,
       ], output: Process::Redirect::Close, error: Process::Redirect::Close)
     end
 
