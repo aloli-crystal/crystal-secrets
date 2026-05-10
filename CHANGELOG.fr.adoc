@@ -3,6 +3,73 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.5.0 — 2026-05-10
+
+=== Ajouté — `secrets env` pour `.env.age` (ferme la fuite `.env` en prod)
+
+Un fichier `.env` sur un serveur de production est un vecteur de
+fuite récurrent. v0.5.0 livre la pièce manquante pour ne jamais
+avoir de `.env` en clair sur disque en production : un verbe qui
+opère sur les fichiers `.env.age` chiffrés au roster courant, et
+une forme `exec` qui déchiffre en mémoire et fait
+`Process.exec` sur la commande cible avec les paires `KEY=VALUE`
+injectées dans son environnement.
+
+Surface CLI :
+
+* `secrets env encrypt FILE.env [-o FILE.env.age]` — écrit le
+  ciphertext mode 0600, chiffré avec `Recipients.encryption_keys`.
+* `secrets env decrypt FILE.env.age [-o FILE.env]` — utile en dev ;
+  émet un warning que le plaintext est sur disque (la prod doit
+  préférer `exec`).
+* `secrets env exec FILE.env.age -- CMD [ARGS...]` — déchiffre en
+  mémoire, parse les paires `KEY=VALUE`, les insère dans
+  l'environnement, puis `Process.exec` sur la cible. Aucun
+  plaintext n'est jamais écrit sur disque. L'image du processus
+  appelant est remplacée — il n'y a pas de « ligne après exec ».
+* `secrets env edit FILE.env.age` — même UX que `secrets edit`
+  mais avec `.env` comme suffixe d'éditeur.
+
+`Secrets::Env.parse` est un parser `.env` minimal : commentaires,
+lignes vides, préfixe `export` optionnel, valeurs entre quotes
+simples ou doubles. Pas de multi-ligne, pas d'expansion
+`${VAR}`, pas de substitution de commande — un coffre est un
+keystore plat, pas un script d'init shell.
+
+=== Ajouté — backend identité-fichier (chemin Linux/FreeBSD minimal)
+
+`MasterKey.read` retombe désormais sur un fichier d'identité
+mode 0600 dans `${XDG_CONFIG_HOME:-~/.config}/secrets/identity`
+si aucune entrée Keychain n'est accessible. Sur macOS l'ordre est
+Keychain → fichier (un fichier d'identité placé manuellement est
+une issue de secours valide en SSH sur un Mac headless). Sur toute
+autre plateforme, le fichier est la seule option.
+
+`MasterKey.generate!` et `.install!` écrivent dans le backend
+adéquat sélectionné à la compilation via `{% if flag?(:darwin) %}`.
+
+C'est intentionnellement minimal — les backends Linux Secret
+Service, Windows Credential Manager et FreeBSD passphrase restent
+hors scope. Le backend fichier est le contrat dont tout serveur
+a besoin pour faire tourner `secrets env exec` dès aujourd'hui.
+
+=== Refactor
+
+* `MasterKey.exists?` introduit (vrai si une clé est accessible par
+  *n'importe quel* backend) — remplace les appels directs
+  `KeychainMacOS.exists?` dans `generate!`.
+* `MasterKey.read` ne mentionne plus Keychain dans son message
+  d'erreur — fonctionne identiquement sur tous les backends.
+
+=== Tests
+
+* `spec/env_spec.cr` — 10 examples couvrant les cas limites du
+  parser `.env` (commentaires, vides, quotes, quotes
+  dépareillées, préfixe `export`, ligne sans `=`, signe `=` dans
+  la valeur, espaces autour de la clé, round-trip complet
+  encrypt → decrypt via age).
+* Total : 55 examples, 0 failures.
+
 == v0.4.0 — 2026-05-10
 
 === Ajouté — coffres multi-recipients (lot 2 de la roadmap README)

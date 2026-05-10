@@ -44,6 +44,7 @@ module Secrets::CLI
     when "diff", "df"        then diff_cmd(argv[1..-1])
     when "log", "l"          then log_cmd(argv[1..-1])
     when "recipients", "rcp" then recipients_cmd(argv[1..-1])
+    when "env", "en"         then env_cmd(argv[1..-1])
     when "master-key", "mk"  then master_key(argv[1..-1])
     when "version", "v", "--version", "-V"
       puts "secrets #{Secrets::VERSION}"
@@ -585,6 +586,163 @@ module Secrets::CLI
   end
 
   # ====================================================================
+  # env — chiffrer/déchiffrer/exec un fichier `.env`
+  # ====================================================================
+  # Encrypt a `.env` to `.env.age`, decrypt back, edit in place, or
+  # `exec` a command with the decrypted KEY=VALUE pairs injected
+  # into its environment (no plaintext on disk). The `.env.age` is
+  # encrypted to the current `Recipients.encryption_keys` roster.
+
+  def env_cmd(argv : Array(String)) : Int32
+    return 64 if argv.empty?
+    case argv.first
+    when "encrypt", "e" then env_encrypt(argv[1..-1])
+    when "decrypt", "d" then env_decrypt(argv[1..-1])
+    when "exec", "x"    then env_exec(argv[1..-1])
+    when "edit"         then env_edit(argv[1..-1])
+    when "help", "h", "--help", "-h"
+      print_env_help(STDOUT)
+      0
+    else
+      STDERR.puts "unknown env subcommand: #{argv.first}"
+      print_env_help(STDERR)
+      64
+    end
+  end
+
+  def env_encrypt(argv : Array(String)) : Int32
+    src = ""
+    dest : String? = nil
+    OptionParser.parse(argv.dup) do |parser|
+      parser.banner = "Usage: secrets env encrypt FILE.env [-o FILE.env.age]"
+      parser.on("-o PATH", "--output=PATH", "Output path (default: <FILE>.age)") { |v| dest = v }
+      parser.on("-h", "--help", "Show this help") { puts parser; exit 0 }
+    end
+    positional = argv.reject { |a| a.starts_with?("-") || a.starts_with?("--") }
+    src = positional[0] if positional.size >= 1
+
+    if src.empty?
+      STDERR.puts "missing source FILE.env"
+      return 64
+    end
+
+    out = Secrets::Env.encrypt_file(src, dest)
+    puts "wrote #{out}"
+    0
+  rescue ex
+    STDERR.puts "env encrypt failed: #{ex.message}"
+    1
+  end
+
+  def env_decrypt(argv : Array(String)) : Int32
+    src = ""
+    dest : String? = nil
+    OptionParser.parse(argv.dup) do |parser|
+      parser.banner = "Usage: secrets env decrypt FILE.env.age [-o FILE.env]"
+      parser.on("-o PATH", "--output=PATH", "Output path (default: drop the .age suffix)") { |v| dest = v }
+      parser.on("-h", "--help", "Show this help") { puts parser; exit 0 }
+    end
+    positional = argv.reject { |a| a.starts_with?("-") || a.starts_with?("--") }
+    src = positional[0] if positional.size >= 1
+
+    if src.empty?
+      STDERR.puts "missing source FILE.env.age"
+      return 64
+    end
+
+    out = Secrets::Env.decrypt_file(src, dest)
+    STDERR.puts "wrote #{out}"
+    STDERR.puts "WARNING: plaintext .env now on disk. Prefer `secrets env exec FILE.env.age -- CMD` on production."
+    0
+  rescue ex
+    STDERR.puts "env decrypt failed: #{ex.message}"
+    1
+  end
+
+  def env_exec(argv : Array(String)) : Int32
+    # Find the `--` separator that splits FILE.env.age from CMD ARGS.
+    sep = argv.index("--")
+    if sep.nil? || sep == 0
+      STDERR.puts "Usage: secrets env exec FILE.env.age -- CMD [ARGS...]"
+      return 64
+    end
+    head = argv[0...sep]
+    cmd_args = argv[(sep + 1)..-1]
+
+    src = ""
+    OptionParser.parse(head.dup) do |parser|
+      parser.banner = "Usage: secrets env exec FILE.env.age -- CMD [ARGS...]"
+      parser.on("-h", "--help", "Show this help") { puts parser; exit 0 }
+    end
+    src = head.first if head.size >= 1 && !head.first.starts_with?("-")
+
+    if src.empty?
+      STDERR.puts "missing FILE.env.age before --"
+      return 64
+    end
+    if cmd_args.empty?
+      STDERR.puts "missing CMD after --"
+      return 64
+    end
+
+    Secrets::Env.exec(src, cmd_args.first, cmd_args[1..-1])
+    # exec replaces the image on success; reaching here = failure.
+    1
+  rescue ex
+    STDERR.puts "env exec failed: #{ex.message}"
+    1
+  end
+
+  def env_edit(argv : Array(String)) : Int32
+    src = ""
+    OptionParser.parse(argv.dup) do |parser|
+      parser.banner = "Usage: secrets env edit FILE.env.age"
+      parser.on("-h", "--help", "Show this help") { puts parser; exit 0 }
+    end
+    positional = argv.reject { |a| a.starts_with?("-") }
+    src = positional[0] if positional.size >= 1
+
+    if src.empty?
+      STDERR.puts "missing FILE.env.age"
+      return 64
+    end
+    unless File.exists?(src)
+      STDERR.puts "file not found: #{src}"
+      return 1
+    end
+
+    identity = Secrets::MasterKey.read.identity
+    plaintext_before = Secrets::Vault.decrypt(File.read(src), identity)
+    plaintext_after = Secrets::Editor.edit(plaintext_before, suffix: ".env")
+
+    if plaintext_after == plaintext_before
+      puts "no changes"
+      return 0
+    end
+
+    ciphertext = Secrets::Vault.encrypt(plaintext_after, Secrets::Recipients.encryption_keys)
+    File.write(src, ciphertext)
+    File.chmod(src, 0o600)
+    puts "edited #{src}"
+    0
+  rescue ex
+    STDERR.puts "env edit failed: #{ex.message}"
+    1
+  end
+
+  private def print_env_help(io : IO) : Nil
+    io.puts "Usage: secrets env SUBCOMMAND [args]"
+    io.puts
+    io.puts "Subcommands :"
+    io.puts "  encrypt, e   FILE.env [-o OUT]      Encrypt FILE.env → FILE.env.age (or OUT)"
+    io.puts "  decrypt, d   FILE.env.age [-o OUT]  Decrypt to plaintext (use sparingly!)"
+    io.puts "  exec,    x   FILE.env.age -- CMD…   Decrypt in memory, exec CMD with env injected"
+    io.puts "  edit         FILE.env.age           Open in \\$EDITOR, re-encrypt on save"
+    io.puts
+    io.puts "On a server, prefer `exec` — it never writes the plaintext to disk."
+  end
+
+  # ====================================================================
   # master-key
   # ====================================================================
 
@@ -737,6 +895,7 @@ module Secrets::CLI
     io.puts "  diff,       df             Compare a vault with another encrypted vault file"
     io.puts "  log,        l              Print the audit log of a vault"
     io.puts "  recipients, rcp            Manage the team roster (add/remove/list)"
+    io.puts "  env,        en             Encrypt/decrypt/exec/edit a .env file"
     io.puts "  master-key, mk             Manage the master key (export/import)"
     io.puts "  version,    v              Print version"
     io.puts "  help,       h              Show this help"

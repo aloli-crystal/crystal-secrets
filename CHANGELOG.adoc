@@ -3,6 +3,70 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.5.0 — 2026-05-10
+
+=== Added — `secrets env` for `.env.age` (closing the .env-on-server gap)
+
+A `.env` file on a production server is a recurring leak vector.
+v0.5.0 ships the missing piece to never have a plaintext `.env` on
+disk in production: a verb that operates on `.env.age` files
+encrypted to the current recipient roster, and an `exec` form that
+decrypts in memory and `Process.exec`'s a target command with the
+parsed `KEY=VALUE` pairs injected into its environment.
+
+CLI surface :
+
+* `secrets env encrypt FILE.env [-o FILE.env.age]` — write the
+  ciphertext, mode 0600, encrypted under `Recipients.encryption_keys`.
+* `secrets env decrypt FILE.env.age [-o FILE.env]` — useful on a
+  development box ; emits a warning that the plaintext is on disk
+  (production should prefer `exec`).
+* `secrets env exec FILE.env.age -- CMD [ARGS...]` — decrypt the
+  ciphertext to memory, parse `KEY=VALUE` pairs, set them in the
+  process environment, then `Process.exec` to the target command.
+  No plaintext is ever written to disk. The image of the calling
+  process is replaced — there is no "after exec" line.
+* `secrets env edit FILE.env.age` — same UX as `secrets edit` but
+  with `.env` as the editor suffix.
+
+`Secrets::Env.parse` is a minimal `.env` parser: comments, blank
+lines, optional `export` prefix, single/double-quoted values. No
+multi-line, no `${VAR}` expansion, no command substitution — a
+vault is a flat keystore, not a shell init file.
+
+=== Added — file-identity backend (the bare-minimum Linux/FreeBSD path)
+
+`MasterKey.read` now falls back to a mode-0600 identity file at
+`${XDG_CONFIG_HOME:-~/.config}/secrets/identity` when no Keychain
+entry is reachable. On macOS the order is Keychain → file (so a
+manually-placed identity file is a valid escape hatch when SSH'ing
+into a headless Mac). On any other platform, the file is the only
+option.
+
+`MasterKey.generate!` and `.install!` write to the platform-appropriate
+backend selected at compile time via `{% if flag?(:darwin) %}`.
+
+This is intentionally minimal — Linux Secret Service, Windows
+Credential Manager, and FreeBSD passphrase backends are still out
+of scope. The file backend is the contract every server needs to
+run `secrets env exec` today.
+
+=== Refactor
+
+* `MasterKey.exists?` introduced (true if a key is reachable through
+  *any* backend) — replaces direct `KeychainMacOS.exists?` calls in
+  `generate!`.
+* `MasterKey.read` no longer mentions Keychain in its error
+  message — works the same on all backends.
+
+=== Tests
+
+* `spec/env_spec.cr` — 10 examples covering `.env` parsing edge
+  cases (comments, blanks, quotes, mismatched quotes, `export`
+  prefix, missing `=`, equals inside values, key whitespace, full
+  encrypt → decrypt round-trip via age).
+* Total: 55 examples, 0 failures.
+
 == v0.4.0 — 2026-05-10
 
 === Added — multi-recipient vaults (lot 2 of the README roadmap)
