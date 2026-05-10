@@ -3,6 +3,73 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.4.0 — 2026-05-10
+
+=== Ajouté — coffres multi-recipients (lot 2 de la roadmap README)
+
+Les coffres peuvent désormais être chiffrés pour une *liste* de
+clés publiques au lieu d'un recipient unique. N'importe laquelle
+des identités listées peut ensuite déchiffrer — c'est le cas
+partage en équipe.
+
+`Vault.encrypt` gagne un overload `Array(String)` :
+
+  Secrets::Vault.encrypt(plaintext, ["age1alice...", "age1bob...", "age1...soi..."])
+
+L'overload string unique est conservé en wrapper fin pour
+compatibilité ascendante. `Vault.decrypt` est inchangé — age gère
+nativement les fichiers multi-recipients ; toute identité qui
+correspond peut déchiffrer.
+
+=== Ajouté — module `Secrets::Recipients` + CLI `secrets recipients`
+
+Le roster vit dans
+`${XDG_CONFIG_HOME:-~/.config}/secrets/recipients.toml`, mode 0644
+(les clés publiques ne sont pas secrètes), versionable, au format
+TOML :
+
+  [recipients]
+  alice = "age1alice..."
+  bob   = "age1bob..."
+
+La clé maîtresse de l'opérateur est ajoutée automatiquement par
+`Recipients.encryption_keys` — impossible de se verrouiller hors
+de son propre coffre par un typo dans le roster.
+
+Surface CLI :
+
+* `secrets recipients add NAME AGE_KEY` (alias `a`) — ajout/mise à jour.
+* `secrets recipients remove NAME` (alias `rm`, `r`) — suppression.
+* `secrets recipients list` (alias `ls`, `l`) — affiche name → key.
+* `secrets recipients help` — aide de la sous-commande.
+
+Après chaque `add` / `remove`, l'opérateur doit lancer
+`secrets rotation -n VAULT` sur chaque coffre qui doit refléter le
+nouveau roster — `rotation` re-chiffre avec
+`Recipients.encryption_keys` (introduit en v0.3.0, devenu
+load-bearing).
+
+=== Modifié
+
+* `vault create`, `set`, `delete`, `edit`, `rotation` — tous les
+  chemins d'écriture passent par `Secrets::Recipients.encryption_keys`
+  au lieu de la seule clé maîtresse. Pour un opérateur solo (pas de
+  `recipients.toml`), le comportement est inchangé : la clé
+  maîtresse seule est utilisée.
+* `cli.cr` — nouveau dispatch + helpers privés pour le sous-arbre
+  `recipients`.
+
+=== Tests
+
+* `spec/recipients_spec.cr` — 6 examples (add, rejet pour clés
+  non-age1 / noms avec point / noms vides, multi-add, update au
+  re-add, remove avec gestion du nom absent).
+* `spec/vault_spec.cr` — 4 nouveaux examples pour le chemin
+  multi-recipient (toute identité déchiffre, liste vide rejetée,
+  recipients invalides au milieu d'une liste rejetés, overload
+  string unique toujours fonctionnel).
+* Total : 45 examples, 0 failures.
+
 == v0.3.0 — 2026-05-10
 
 === Ajouté — cinq nouvelles sous-commandes (lot 1 de la roadmap README)

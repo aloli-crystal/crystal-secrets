@@ -3,6 +3,69 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.4.0 — 2026-05-10
+
+=== Added — multi-recipient vaults (lot 2 of the README roadmap)
+
+Vaults can now be encrypted to a *list* of public keys instead of a
+single recipient. Any of the listed identities can later decrypt —
+this is the team-sharing case.
+
+`Vault.encrypt` gains an `Array(String)` overload:
+
+  Secrets::Vault.encrypt(plaintext, ["age1alice...", "age1bob...", "age1...self..."])
+
+The single-string overload is retained as a thin wrapper for
+backward compatibility. `Vault.decrypt` is unchanged — age natively
+handles multi-recipient files; any matching identity decrypts.
+
+=== Added — `Secrets::Recipients` module + `secrets recipients` CLI
+
+The roster lives at
+`${XDG_CONFIG_HOME:-~/.config}/secrets/recipients.toml`, mode 0644
+(public keys are not secret), versionable, in TOML format:
+
+  [recipients]
+  alice = "age1alice..."
+  bob   = "age1bob..."
+
+The operator's own master key is auto-included by
+`Recipients.encryption_keys` so adding a typo'd entry can never lock
+the operator out of their own vault.
+
+CLI surface:
+
+* `secrets recipients add NAME AGE_KEY` (alias `a`) — add or update.
+* `secrets recipients remove NAME` (alias `rm`, `r`) — remove.
+* `secrets recipients list` (alias `ls`, `l`) — show name → key map.
+* `secrets recipients help` — subcommand help.
+
+After every `add` / `remove`, the operator must run
+`secrets rotation -n VAULT` on each vault that should reflect the
+new roster — `rotation` re-encrypts with `Recipients.encryption_keys`
+(introduced in v0.3.0, now load-bearing).
+
+=== Changed
+
+* `vault create`, `set`, `delete`, `edit`, `rotation` — all the
+  write paths now use `Secrets::Recipients.encryption_keys` instead
+  of the operator's master key alone. For solo operators (no
+  `recipients.toml`) the behaviour is unchanged: just the master
+  key is used.
+* `cli.cr` — new private dispatch + helpers for the
+  `recipients` subtree.
+
+=== Tests
+
+* `spec/recipients_spec.cr` — 6 examples (add, validation rejection
+  for non-age1 keys / dotted names / empty names, multi-add,
+  update-on-readd, remove with missing-name handling).
+* `spec/vault_spec.cr` — 4 new examples for the multi-recipient
+  encrypt path (any-identity decrypts, empty list rejected, mixed
+  valid/invalid recipients rejected, single-string overload still
+  works).
+* Total: 45 examples, 0 failures.
+
 == v0.3.0 — 2026-05-10
 
 === Added — five new subcommands (lot 1 of the README roadmap)

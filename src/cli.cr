@@ -33,17 +33,18 @@ module Secrets::CLI
     end
 
     case argv.first
-    when "init", "i"        then init(argv[1..-1])
-    when "vault", "vt"      then vault(argv[1..-1])
-    when "get", "g"         then get(argv[1..-1])
-    when "set", "s"         then set_cmd(argv[1..-1])
-    when "delete", "rm"     then delete_cmd(argv[1..-1])
-    when "list", "ls"       then list_cmd(argv[1..-1])
-    when "edit", "e"        then edit_cmd(argv[1..-1])
-    when "rotation", "r"    then rotation_cmd(argv[1..-1])
-    when "diff", "df"       then diff_cmd(argv[1..-1])
-    when "log", "l"         then log_cmd(argv[1..-1])
-    when "master-key", "mk" then master_key(argv[1..-1])
+    when "init", "i"         then init(argv[1..-1])
+    when "vault", "vt"       then vault(argv[1..-1])
+    when "get", "g"          then get(argv[1..-1])
+    when "set", "s"          then set_cmd(argv[1..-1])
+    when "delete", "rm"      then delete_cmd(argv[1..-1])
+    when "list", "ls"        then list_cmd(argv[1..-1])
+    when "edit", "e"         then edit_cmd(argv[1..-1])
+    when "rotation", "r"     then rotation_cmd(argv[1..-1])
+    when "diff", "df"        then diff_cmd(argv[1..-1])
+    when "log", "l"          then log_cmd(argv[1..-1])
+    when "recipients", "rcp" then recipients_cmd(argv[1..-1])
+    when "master-key", "mk"  then master_key(argv[1..-1])
     when "version", "v", "--version", "-V"
       puts "secrets #{Secrets::VERSION}"
       0
@@ -186,9 +187,8 @@ module Secrets::CLI
       return 1
     end
 
-    keypair = Secrets::MasterKey.read
     initial = "# vault: #{name} (created #{Time.utc.to_s("%Y-%m-%d")})\n"
-    ciphertext = Secrets::Vault.encrypt(initial, keypair.recipient)
+    ciphertext = Secrets::Vault.encrypt(initial, Secrets::Recipients.encryption_keys)
     File.write(path, ciphertext)
     File.chmod(path, 0o600)
     Secrets::Audit.log(name, "create")
@@ -336,8 +336,7 @@ module Secrets::CLI
       return 1
     end
 
-    keypair = Secrets::MasterKey.read
-    ciphertext = Secrets::Vault.encrypt(after, keypair.recipient)
+    ciphertext = Secrets::Vault.encrypt(after, Secrets::Recipients.encryption_keys)
     File.write(vault_path(vault_name, vault_dir), ciphertext)
     File.chmod(vault_path(vault_name, vault_dir), 0o600)
     Secrets::Audit.log(vault_name, "edit")
@@ -479,6 +478,113 @@ module Secrets::CLI
   end
 
   # ====================================================================
+  # recipients
+  # ====================================================================
+  # Manage the team roster of public keys that vaults are encrypted to.
+  # The roster lives in `${XDG_CONFIG_HOME:-~/.config}/secrets/recipients.toml`
+  # and is safe to commit to git (only public keys, no secret material).
+
+  def recipients_cmd(argv : Array(String)) : Int32
+    return 64 if argv.empty?
+    case argv.first
+    when "add", "a"          then recipients_add(argv[1..-1])
+    when "remove", "rm", "r" then recipients_remove(argv[1..-1])
+    when "list", "ls", "l"   then recipients_list(argv[1..-1])
+    when "help", "h", "--help", "-h"
+      print_recipients_help(STDOUT)
+      0
+    else
+      STDERR.puts "unknown recipients subcommand: #{argv.first}"
+      print_recipients_help(STDERR)
+      64
+    end
+  end
+
+  def recipients_add(argv : Array(String)) : Int32
+    name = ""
+    key = ""
+    OptionParser.parse(argv.dup) do |parser|
+      parser.banner = "Usage: secrets recipients add -n NAME -k AGE_PUBLIC_KEY"
+      parser.on("-n NAME", "--name=NAME", "Human-readable name (no '.')") { |v| name = v }
+      parser.on("-k KEY", "--key=KEY", "Public key starting with age1") { |v| key = v }
+      parser.on("-h", "--help", "Show this help") { puts parser; exit 0 }
+    end
+    positional = argv.reject { |a| a.starts_with?("-") }
+    name = positional[0] if name.empty? && positional.size >= 1
+    key = positional[1] if key.empty? && positional.size >= 2
+
+    if name.empty? || key.empty?
+      STDERR.puts "missing NAME and/or KEY"
+      return 64
+    end
+
+    Secrets::Recipients.add(name, key)
+    puts "added recipient #{name} = #{key}"
+    puts "Run `secrets rotation -n VAULT` on each vault to re-encrypt with the updated roster."
+    0
+  rescue ex
+    STDERR.puts "recipients add failed: #{ex.message}"
+    1
+  end
+
+  def recipients_remove(argv : Array(String)) : Int32
+    name = ""
+    OptionParser.parse(argv.dup) do |parser|
+      parser.banner = "Usage: secrets recipients remove -n NAME"
+      parser.on("-n NAME", "--name=NAME", "Recipient name") { |v| name = v }
+      parser.on("-h", "--help", "Show this help") { puts parser; exit 0 }
+    end
+    positional = argv.reject { |a| a.starts_with?("-") }
+    name = positional[0] if name.empty? && positional.size >= 1
+
+    if name.empty?
+      STDERR.puts "missing NAME"
+      return 64
+    end
+
+    if Secrets::Recipients.remove(name)
+      puts "removed recipient #{name}"
+      puts "Run `secrets rotation -n VAULT` on each vault to re-encrypt without this recipient."
+      0
+    else
+      STDERR.puts "no such recipient: #{name}"
+      1
+    end
+  rescue ex
+    STDERR.puts "recipients remove failed: #{ex.message}"
+    1
+  end
+
+  def recipients_list(_argv : Array(String)) : Int32
+    roster = Secrets::Recipients.list_named
+    if roster.empty?
+      puts "no recipients in #{Secrets::Recipients::RECIPIENTS_FILE}"
+      puts "(your master key alone is used to encrypt vaults)"
+      return 0
+    end
+    width = roster.keys.map(&.size).max
+    roster.each do |name, key|
+      puts "%-#{width}s  %s" % [name, key]
+    end
+    0
+  rescue ex
+    STDERR.puts "recipients list failed: #{ex.message}"
+    1
+  end
+
+  private def print_recipients_help(io : IO) : Nil
+    io.puts "Usage: secrets recipients SUBCOMMAND [options]"
+    io.puts
+    io.puts "Subcommands :"
+    io.puts "  add,    a    -n NAME -k AGE_KEY    Add or update a recipient"
+    io.puts "  remove, rm   -n NAME                Remove a recipient"
+    io.puts "  list,   ls                          Show all recipients"
+    io.puts
+    io.puts "After add/remove, run `secrets rotation -n VAULT` on each vault"
+    io.puts "to re-encrypt under the updated roster."
+  end
+
+  # ====================================================================
   # master-key
   # ====================================================================
 
@@ -592,9 +698,8 @@ module Secrets::CLI
 
   private def write_vault(name : String, vault_dir : String, doc : ::TOML::Document) : Nil
     path = vault_path(name, vault_dir)
-    keypair = Secrets::MasterKey.read
     plaintext = doc.to_toml
-    ciphertext = Secrets::Vault.encrypt(plaintext, keypair.recipient)
+    ciphertext = Secrets::Vault.encrypt(plaintext, Secrets::Recipients.encryption_keys)
     File.write(path, ciphertext)
     File.chmod(path, 0o600)
   end
@@ -631,6 +736,7 @@ module Secrets::CLI
     io.puts "  rotation,   r              Re-encrypt a vault under the current master key"
     io.puts "  diff,       df             Compare a vault with another encrypted vault file"
     io.puts "  log,        l              Print the audit log of a vault"
+    io.puts "  recipients, rcp            Manage the team roster (add/remove/list)"
     io.puts "  master-key, mk             Manage the master key (export/import)"
     io.puts "  version,    v              Print version"
     io.puts "  help,       h              Show this help"

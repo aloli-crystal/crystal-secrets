@@ -28,16 +28,34 @@ module Secrets
 
     # Encrypt `plaintext` to ASCII-armored age PEM for `recipient`
     # (a public key string starting with "age1...").
+    #
+    # Single-recipient overload retained for backward compatibility
+    # with the v0.1–v0.3 API. New code should prefer the array form.
     def encrypt(plaintext : String, recipient : String) : String
-      raise VaultError.new("recipient must start with 'age1'") unless recipient.starts_with?("age1")
+      encrypt(plaintext, [recipient])
+    end
+
+    # Encrypt `plaintext` to ASCII-armored age PEM for the given list
+    # of recipient public keys. Each key must start with "age1...".
+    # `age(1)` natively supports multi-recipient encryption: any of
+    # the corresponding identities can later decrypt the file.
+    #
+    # Empty list raises `VaultError` — encrypting to nobody is never
+    # what the caller intended.
+    def encrypt(plaintext : String, recipients : Array(String)) : String
+      raise VaultError.new("recipients list must not be empty") if recipients.empty?
+      recipients.each do |r|
+        raise VaultError.new("recipient must start with 'age1' (got: #{r[0..15]}...)") unless r.starts_with?("age1")
+      end
+
+      args = ["--armor", "--encrypt"]
+      recipients.each do |r|
+        args << "--recipient" << r
+      end
 
       stdout = IO::Memory.new
       stderr = IO::Memory.new
-      status = Process.run(binary, [
-        "--armor",
-        "--encrypt",
-        "--recipient", recipient,
-      ],
+      status = Process.run(binary, args,
         input: IO::Memory.new(plaintext),
         output: stdout,
         error: stderr)

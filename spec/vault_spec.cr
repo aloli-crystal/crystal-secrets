@@ -1,5 +1,14 @@
 require "./spec_helper"
 
+private def fresh_keypair : {String, String}
+  stdout = IO::Memory.new
+  Process.run("age-keygen", [] of String, output: stdout)
+  kb = stdout.to_s
+  identity = kb.lines.find! { |l| l.starts_with?("AGE-SECRET-KEY-1") }.strip
+  recipient = kb.lines.find! { |l| l.starts_with?("# public key:") }.split(' ', 4).last.strip
+  {identity, recipient}
+end
+
 describe Secrets::Vault do
   describe "round-trip with a generated age keypair" do
     # We use the real `age` binary (assumed installed via `brew
@@ -45,6 +54,40 @@ describe Secrets::Vault do
       expect_raises(Secrets::VaultError, /decrypt failed/) do
         Secrets::Vault.decrypt(ct, identity1)
       end
+    end
+  end
+
+  describe "multi-recipient encryption" do
+    it "any of the recipient identities can decrypt the payload" do
+      id1, rcp1 = fresh_keypair
+      id2, rcp2 = fresh_keypair
+      id3, rcp3 = fresh_keypair
+
+      payload = "TEAM_SECRET = \"shared\"\n"
+      ct = Secrets::Vault.encrypt(payload, [rcp1, rcp2, rcp3])
+
+      Secrets::Vault.decrypt(ct, id1).should eq(payload)
+      Secrets::Vault.decrypt(ct, id2).should eq(payload)
+      Secrets::Vault.decrypt(ct, id3).should eq(payload)
+    end
+
+    it "rejects an empty recipient list" do
+      expect_raises(Secrets::VaultError, /must not be empty/) do
+        Secrets::Vault.encrypt("x", [] of String)
+      end
+    end
+
+    it "rejects a malformed recipient inside the list" do
+      _, rcp = fresh_keypair
+      expect_raises(Secrets::VaultError, /age1/) do
+        Secrets::Vault.encrypt("x", [rcp, "not-a-key"])
+      end
+    end
+
+    it "single-recipient overload still works (backward compat)" do
+      id, rcp = fresh_keypair
+      ct = Secrets::Vault.encrypt("hello", rcp)
+      Secrets::Vault.decrypt(ct, id).should eq("hello")
     end
   end
 
