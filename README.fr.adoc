@@ -73,8 +73,8 @@ Hors périmètre (à venir) :
 ----
 brew install age              # dépendance runtime requise
 shards install
-crystal build src/cli.cr -o secrets --release
-ln -s "$PWD/secrets" ~/bin/
+shards build --release
+ln -s "$PWD/bin/secrets" ~/bin/
 ----
 
 == Démarrage rapide
