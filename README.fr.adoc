@@ -74,7 +74,7 @@ Hors périmètre (à venir) :
 brew install age              # dépendance runtime requise
 shards install
 crystal build src/cli.cr -o secrets --release
-sudo install -m 0755 secrets /usr/local/bin/
+ln -s "$PWD/secrets" ~/bin/
 ----
 
 == Démarrage rapide
