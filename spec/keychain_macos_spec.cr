@@ -28,6 +28,7 @@ private def with_stateful_security(preset : Hash(String, String) = {} of String 
   mode=""
   service=""
   account=""
+  value=""
   while [ $# -gt 0 ]; do
     case "$1" in
       add-generic-password)    mode=add;    shift ;;
@@ -35,12 +36,13 @@ private def with_stateful_security(preset : Hash(String, String) = {} of String 
       delete-generic-password) mode=delete; shift ;;
       -s) service="$2"; shift 2 ;;
       -a) account="$2"; shift 2 ;;
+      -w) value="$2"; shift 2 ;;
       *)  shift ;;
     esac
   done
   key="$STATE/${service}__${account}"
   case "$mode" in
-    add)    cat > "$key"; exit 0 ;;
+    add)    printf '%s' "$value" > "$key"; exit 0 ;;
     find)   [ -f "$key" ] && cat "$key" && exit 0; exit 44 ;;
     delete) rm -f "$key"; exit 0 ;;
   esac
@@ -96,24 +98,26 @@ end
 
 describe Secrets::KeychainMacOS do
   describe ".store" do
-    it "calls add-generic-password with the right service/account and the value via stdin" do
+    it "calls add-generic-password avec la valeur via -w (argv), service, account, update" do
       with_fake_security do |log|
-        Secrets::KeychainMacOS.store("master-key", "AGE-SECRET-KEY-1...")
+        Secrets::KeychainMacOS.store("master-key", "AGE-SECRET-KEY-1ABC")
         recorded = File.read(log)
         recorded.should contain("add-generic-password")
         recorded.should contain("-a master-key")
         recorded.should contain("-s dev.aloli.secrets")
         recorded.should contain("-U")
-        recorded.should contain("STDIN:AGE-SECRET-KEY-1...")
+        # `security add-generic-password` n'a pas de mode stdin : la
+        # valeur passe par `-w <value>`. Régression du bug « -w - » qui
+        # stockait le littéral « - » : on exige la vraie valeur, pas un tiret.
+        recorded.should contain("-w AGE-SECRET-KEY-1ABC")
+        recorded.should_not contain("-w -\n")
       end
     end
 
-    it "never puts the secret on argv" do
-      secret = "very-private-AGE-SECRET-KEY-1abc123"
-      with_fake_security do |log|
-        Secrets::KeychainMacOS.store("master-key", secret)
-        cmd_line = File.read(log).lines.find! { |l| l.starts_with?("CMD:") }
-        cmd_line.should_not contain(secret)
+    it "round-trip store→fetch rend la valeur EXACTE (aurait attrapé le bug -w -)" do
+      with_stateful_security do
+        Secrets::KeychainMacOS.store("master-key", "AGE-SECRET-KEY-1ROUNDTRIP")
+        Secrets::KeychainMacOS.fetch("master-key").should eq("AGE-SECRET-KEY-1ROUNDTRIP")
       end
     end
 

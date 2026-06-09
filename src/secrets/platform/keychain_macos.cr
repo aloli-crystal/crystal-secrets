@@ -4,10 +4,18 @@ require "../error"
 module Secrets
   # macOS Keychain backend, via shell-out to `/usr/bin/security`.
   #
-  # The key material is fed/read through stdin/stdout — never through
-  # `argv` (which would leak via `ps`). Each entry uses a fixed
-  # `service` (= the shard's bundle id) and a caller-chosen `account`
-  # to disambiguate (e.g. "master-key").
+  # LECTURE (`fetch`) : la valeur sort sur stdout (`-w`), jamais argv.
+  #
+  # ÉCRITURE (`store`) : `security add-generic-password` n'a AUCUN mode
+  # stdin pour le mot de passe — `-w` consomme l'argument suivant. On
+  # passe donc la valeur en argv (`-w <value>`), brièvement visible via
+  # `ps` le temps du process `security` (quelques ms). C'est une
+  # limite de l'outil `security(1)`, pas un choix : la tentative
+  # « stdin » (`-w -`) stockait littéralement « - » (bug corrigé).
+  # On atténue en ne logguant jamais les args complets en cas d'erreur.
+  #
+  # Chaque entrée utilise un `service` fixe (= bundle id du shard) et un
+  # `account` choisi par l'appelant (ex: "master-key").
   module KeychainMacOS
     extend self
 
@@ -20,15 +28,22 @@ module Secrets
     end
 
     # Store (or update) a generic password under (SERVICE, account).
-    # The value is passed via stdin (`-w -`), never via argv.
+    #
+    # ATTENTION : `security add-generic-password` ne lit PAS le mot de
+    # passe sur stdin. `-w` *consomme l'argument suivant* comme valeur.
+    # L'ancien `-w - -U` stockait donc littéralement « - » (puis `-U`
+    # restait le flag update) et jetait la vraie valeur piped sur stdin
+    # — d'où une master key corrompue à `-`. On passe la valeur en argv
+    # via `-w <value>`. L'exposition argv est brève et locale (le
+    # process `security` vit quelques ms) ; c'est le compromis standard
+    # de l'outil, et de toute façon strictement mieux que la corruption.
     def store(account : String, value : String) : Nil
       args = [binary, "add-generic-password",
               "-a", account,
               "-s", SERVICE,
-              "-w", # password value follows; use "-" to read from stdin
-              "-",
+              "-w", value,
               "-U"] # update if it exists already
-      run_with_stdin!(args, value)
+      run!(args)
     end
 
     # Retrieve the value as a raw string. Raises KeychainError if absent.
@@ -120,6 +135,20 @@ module Secrets
         error: stderr)
       unless status.success?
         raise KeychainError.new("#{args.join(' ')} failed (exit #{status.exit_code}): #{stderr.to_s.strip}")
+      end
+    end
+
+    # Exécute sans stdin (les args portent toute l'info). Le message
+    # d'erreur ne logge PAS les args (qui peuvent contenir un secret
+    # via `-w <value>`) — seulement le binaire et le code de sortie.
+    private def run!(args : Array(String)) : Nil
+      stderr = IO::Memory.new
+      status = Process.run(args[0], args[1..-1],
+        input: Process::Redirect::Close,
+        output: Process::Redirect::Close,
+        error: stderr)
+      unless status.success?
+        raise KeychainError.new("#{args[0]} #{args[1]?} failed (exit #{status.exit_code}): #{stderr.to_s.strip}")
       end
     end
   end

@@ -6,9 +6,9 @@ shards:
 
   diceware:
     git: https://github.com/aloli-crystal/diceware.git
-    version: 0.1.4
+    version: 0.1.5
 
   toml:
     git: https://github.com/aloli-crystal/toml.git
-    version: 0.1.2
+    version: 0.1.4
 
