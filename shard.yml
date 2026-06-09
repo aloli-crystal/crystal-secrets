@@ -1,5 +1,5 @@
 name: secrets
-version: 0.5.1
+version: 0.5.2
 description: |
   Secrets management for the Aloli Crystal ecosystem: a TOML vault
   encrypted with age, a master key stored in the macOS Keychain

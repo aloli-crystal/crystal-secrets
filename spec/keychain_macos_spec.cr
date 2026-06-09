@@ -67,6 +67,11 @@ private def with_fake_security(behaviour : String? = nil, &)
   File.delete(log) if File.exists?(log)
 
   script = String.build do |s|
+    # On ne lit JAMAIS stdin ici : `security` ne prend pas le secret sur
+    # stdin (cf. backend), donc aucun test n'asserte plus `STDIN:`. Un
+    # `stdin=$(cat)` bloquerait le faux process tant que stdin n'est pas
+    # fermé — ce qui figeait la CI (fetch/exists/delete ne ferment pas
+    # stdin). On se contente de logguer la ligne de commande (`CMD:`).
     s << <<-SH
     #!/bin/sh
     LOG="#{log}"
@@ -74,8 +79,6 @@ private def with_fake_security(behaviour : String? = nil, &)
       printf 'CMD:'
       for a in "$@"; do printf ' %s' "$a"; done
       printf '\\n'
-      stdin=$(cat)
-      printf 'STDIN:%s\\n' "$stdin"
     } >> "$LOG"
     SH
     if behaviour
