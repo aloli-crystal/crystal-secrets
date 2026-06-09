@@ -34,9 +34,15 @@ private def with_stateful_security(preset : Hash(String, String) = {} of String 
       add-generic-password)    mode=add;    shift ;;
       find-generic-password)   mode=find;   shift ;;
       delete-generic-password) mode=delete; shift ;;
-      -s) service="$2"; shift 2 ;;
-      -a) account="$2"; shift 2 ;;
-      -w) value="$2"; shift 2 ;;
+      -s) service="$2"; shift; [ $# -gt 0 ] && shift ;;
+      -a) account="$2"; shift; [ $# -gt 0 ] && shift ;;
+      # `find-generic-password ... -w` passe `-w` SEUL en dernier arg
+      # (sémantique réelle : « n'imprimer que le mot de passe »). Un
+      # `shift 2` quand il ne reste qu'un seul arg échoue SANS décrémenter
+      # $# -> boucle `while [ $# -gt 0 ]` infinie = hang de la CI. On
+      # shift 1 pour `-w`, puis 1 de plus seulement s'il reste une valeur
+      # (cas `add-generic-password ... -w <value> -U`).
+      -w) value="$2"; shift; [ $# -gt 0 ] && shift ;;
       *)  shift ;;
     esac
   done
